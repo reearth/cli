@@ -1,0 +1,19 @@
+---
+name: reearth
+description: Operate Re:Earth products (Visualizer, CMS, Flow) through the `{{.App}}` CLI. Use when the user asks to read or change Re:Earth data or projects, or to script Re:Earth.
+---
+
+# Re:Earth CLI
+
+The CLI documents itself, and its docs always match the installed version. Do not rely on memory; read them first:
+
+1. `{{.App}} skills list` — list the available docs
+2. `{{.App}} skills <doc>` — read one (start with `overview`)
+3. `{{.App}} <command> --help` — show the flags of a command
+
+Rules:
+
+- Pass `--json` (optionally `--jq '<expr>'`) whenever you need to parse output.
+- Never print or copy access tokens. The CLI authenticates for you.
+- Only add `--yes` to destructive commands after the user has confirmed.
+- If a command fails with exit code 4, ask the user to run `{{.App}} login`.

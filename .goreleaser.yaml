@@ -1,0 +1,191 @@
+# yaml-language-server: $schema=https://goreleaser.com/static/schema.json
+version: 2
+
+project_name: reearth
+
+before:
+  hooks:
+    - go mod tidy
+    - ./scripts/completions.sh
+
+builds:
+  - id: reearth
+    main: ./cmd/reearth
+    binary: reearth
+    env:
+      - CGO_ENABLED=0
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+    flags:
+      - -trimpath
+    # Auth0 values come from repository secrets at release time. `index .Env`
+    # yields "" when unset, so snapshot builds work without them (the release
+    # workflow refuses to publish if they are missing).
+    ldflags:
+      - -s -w
+      - -X github.com/reearth/cli/sdk/build.Version={{ .Version }}
+      - -X github.com/reearth/cli/sdk/build.Commit={{ .ShortCommit }}
+      - -X github.com/reearth/cli/sdk/build.Date={{ .CommitDate }}
+      - -X github.com/reearth/cli/sdk/auth.prodDomain={{ index .Env "REEARTH_AUTH0_DOMAIN" }}
+      - -X github.com/reearth/cli/sdk/auth.prodClientID={{ index .Env "REEARTH_AUTH0_CLIENT_ID" }}
+      - -X github.com/reearth/cli/sdk/auth.prodAudience={{ index .Env "REEARTH_AUTH0_AUDIENCE" }}
+      - -X github.com/reearth/cli/sdk/auth.stagingDomain={{ index .Env "REEARTH_AUTH0_STAGING_DOMAIN" }}
+      - -X github.com/reearth/cli/sdk/auth.stagingClientID={{ index .Env "REEARTH_AUTH0_STAGING_CLIENT_ID" }}
+      - -X github.com/reearth/cli/sdk/auth.stagingAudience={{ index .Env "REEARTH_AUTH0_STAGING_AUDIENCE" }}
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+archives:
+  - id: reearth
+    ids: [reearth]
+    # Must match internal/update.ArchiveName and docs/install.sh.
+    name_template: "reearth_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files:
+      - LICENSE
+      - README.md
+      - completions/*
+
+checksum:
+  # Must match internal/update and docs/install.sh.
+  name_template: "reearth_{{ .Version }}_checksums.txt"
+  algorithm: sha256
+
+signs:
+  # Keyless (OIDC) cosign signature of the checksums file.
+  - cmd: cosign
+    artifacts: checksum
+    signature: "${artifact}.sigstore.json"
+    args: ["sign-blob", "--bundle=${signature}", "${artifact}", "--yes"]
+
+nfpms:
+  - id: reearth
+    ids: [reearth]
+    package_name: reearth
+    file_name_template: "{{ .ConventionalFileName }}"
+    vendor: Eukarya
+    homepage: https://reearth.io
+    maintainer: Re:Earth <info@reearth.io>
+    description: Command-line interface for Re:Earth
+    license: MIT
+    formats: [deb, rpm, apk]
+    bindir: /usr/bin
+    contents:
+      - src: ./completions/reearth.bash
+        dst: /usr/share/bash-completion/completions/reearth
+      - src: ./completions/reearth.zsh
+        dst: /usr/share/zsh/site-functions/_reearth
+      - src: ./completions/reearth.fish
+        dst: /usr/share/fish/vendor_completions.d/reearth.fish
+
+homebrew_casks:
+  - name: reearth
+    ids: [reearth]
+    binaries: [reearth]
+    homepage: https://reearth.io
+    description: Command-line interface for Re:Earth
+    repository:
+      owner: reearth
+      name: homebrew-tap
+      token: "{{ index .Env \"HOMEBREW_TAP_TOKEN\" }}"
+    directory: Casks
+    # Commits are attributed to the reearth-app bot that owns the token.
+    commit_author:
+      name: '{{ index .Env "GH_APP_USER" }}'
+      email: '171218383+{{ index .Env "GH_APP_USER" }}@users.noreply.github.com'
+    skip_upload: "{{ if index .Env \"HOMEBREW_TAP_TOKEN\" }}false{{ else }}true{{ end }}"
+    completions:
+      bash: completions/reearth.bash
+      zsh: completions/reearth.zsh
+      fish: completions/reearth.fish
+    hooks:
+      post:
+        # Binaries are not notarized yet; drop the quarantine attribute.
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/reearth"]
+          end
+
+scoops:
+  - name: reearth
+    ids: [reearth]
+    homepage: https://reearth.io
+    description: Command-line interface for Re:Earth
+    license: MIT
+    repository:
+      owner: reearth
+      name: scoop-bucket
+      token: "{{ index .Env \"SCOOP_BUCKET_TOKEN\" }}"
+    commit_author:
+      name: reearth-bot
+      email: bot@reearth.io
+    skip_upload: "{{ if index .Env \"SCOOP_BUCKET_TOKEN\" }}false{{ else }}true{{ end }}"
+
+winget:
+  - name: Reearth
+    publisher: Re:Earth
+    package_identifier: Reearth.Reearth
+    ids: [reearth]
+    short_description: Command-line interface for Re:Earth
+    license: MIT
+    homepage: https://reearth.io
+    publisher_url: https://reearth.io
+    repository:
+      # A fork of microsoft/winget-pkgs; goreleaser opens a PR upstream.
+      owner: reearth
+      name: winget-pkgs
+      branch: "reearth-{{ .Version }}"
+      token: "{{ index .Env \"WINGET_TOKEN\" }}"
+      pull_request:
+        enabled: true
+        base:
+          owner: microsoft
+          name: winget-pkgs
+          branch: master
+    commit_author:
+      name: reearth-bot
+      email: bot@reearth.io
+    skip_upload: "{{ if index .Env \"WINGET_TOKEN\" }}false{{ else }}true{{ end }}"
+
+changelog:
+  use: github
+  sort: asc
+  abbrev: 7
+  groups:
+    - title: Breaking changes
+      regexp: '^.*?(feat|fix|refactor|perf)(\([^)]+\))?!:.+$'
+      order: 0
+    - title: Features
+      regexp: '^.*?feat(\([^)]+\))?:.+$'
+      order: 1
+    - title: Bug fixes
+      regexp: '^.*?fix(\([^)]+\))?:.+$'
+      order: 2
+    - title: Performance
+      regexp: '^.*?perf(\([^)]+\))?:.+$'
+      order: 3
+    - title: Other changes
+      order: 999
+  filters:
+    exclude:
+      - '^.*?(docs|test|ci|chore)(\([^)]+\))?:.+$'
+      - "^Merge (pull request|branch)"
+
+release:
+  github:
+    owner: reearth
+    name: cli
+  prerelease: auto
+  footer: |
+    **Install or upgrade**
+
+    ```sh
+    brew install reearth/tap/reearth        # macOS / Linux
+    scoop install reearth/reearth           # Windows (after `scoop bucket add reearth https://github.com/reearth/scoop-bucket`)
+    winget install Reearth.Reearth          # Windows
+    curl -fsSL https://cli.reearth.io/install.sh | sh
+    ```
+
+    Verify the checksums: `cosign verify-blob --bundle reearth_{{ .Version }}_checksums.txt.sigstore.json --certificate-identity-regexp '^https://github.com/reearth/cli/' --certificate-oidc-issuer https://token.actions.githubusercontent.com reearth_{{ .Version }}_checksums.txt`

@@ -1,0 +1,85 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions: {}
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: write # create the GitHub release
+      id-token: write # cosign keyless signing and attestations
+      attestations: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # the changelog needs the full history
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false # never restore caches into a release build
+
+      - name: Check required secrets
+        env:
+          REEARTH_AUTH0_DOMAIN: ${{ secrets.REEARTH_AUTH0_DOMAIN }}
+          REEARTH_AUTH0_CLIENT_ID: ${{ secrets.REEARTH_AUTH0_CLIENT_ID }}
+          REEARTH_AUTH0_AUDIENCE: ${{ secrets.REEARTH_AUTH0_AUDIENCE }}
+        run: |
+          missing=0
+          for v in REEARTH_AUTH0_DOMAIN REEARTH_AUTH0_CLIENT_ID REEARTH_AUTH0_AUDIENCE; do
+            if [ -z "${!v}" ]; then
+              echo "::error::Repository secret $v is not set; the binaries would not be able to log in."
+              missing=1
+            fi
+          done
+          exit "$missing"
+
+      # GITHUB_TOKEN can only write to this repository. Pushing the cask to
+      # reearth/homebrew-tap uses the org's reearth-app installation, with a
+      # token narrowed to that one repository.
+      - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        id: app-token
+        with:
+          app-id: ${{ vars.GH_APP_ID }}
+          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+          owner: reearth
+          repositories: homebrew-tap
+
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+      - uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
+        with:
+          distribution: goreleaser
+          version: v2.18.2
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HOMEBREW_TAP_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_APP_USER: ${{ vars.GH_APP_USER }}
+          # Scoop and winget are skipped until reearth/scoop-bucket and a fork of
+          # microsoft/winget-pkgs exist; then add them to the app token above.
+          REEARTH_AUTH0_DOMAIN: ${{ secrets.REEARTH_AUTH0_DOMAIN }}
+          REEARTH_AUTH0_CLIENT_ID: ${{ secrets.REEARTH_AUTH0_CLIENT_ID }}
+          REEARTH_AUTH0_AUDIENCE: ${{ secrets.REEARTH_AUTH0_AUDIENCE }}
+          REEARTH_AUTH0_STAGING_DOMAIN: ${{ secrets.REEARTH_AUTH0_STAGING_DOMAIN }}
+          REEARTH_AUTH0_STAGING_CLIENT_ID: ${{ secrets.REEARTH_AUTH0_STAGING_CLIENT_ID }}
+          REEARTH_AUTH0_STAGING_AUDIENCE: ${{ secrets.REEARTH_AUTH0_STAGING_AUDIENCE }}
+
+      - name: Locate checksums
+        id: sums
+        run: echo "path=dist/reearth_${GITHUB_REF_NAME#v}_checksums.txt" >> "$GITHUB_OUTPUT"
+
+      # Build provenance for every artifact listed in the checksums file.
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-checksums: ${{ steps.sums.outputs.path }}

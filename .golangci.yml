@@ -1,0 +1,48 @@
+version: "2"
+
+linters:
+  default: standard
+  enable:
+    - bodyclose
+    - depguard
+    - errorlint
+    - misspell
+    - nolintlint
+    - unconvert
+    - usestdlibvars
+  settings:
+    depguard:
+      rules:
+        # The SDK is imported by products and extensions; it must not depend
+        # on the distribution binary or on any product.
+        sdk:
+          files:
+            - "**/sdk/**"
+          deny:
+            - pkg: github.com/reearth/cli/internal
+              desc: sdk must not depend on the reearth binary internals
+            - pkg: github.com/reearth/cli/products
+              desc: sdk must not depend on products
+        products:
+          files:
+            - "**/products/**"
+            - "!**/*_test.go"
+          deny:
+            - pkg: github.com/reearth/cli/internal
+              desc: products use the sdk only
+  exclusions:
+    presets:
+      - std-error-handling
+    rules:
+      - path: _test\.go
+        linters:
+          - depguard
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/reearth/cli
