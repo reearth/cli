@@ -41,65 +41,10 @@ Global flags: `--account`, `--json[=fields]`, `--jq`, `-o table|plain|json|yaml|
 
 Credentials are stored in the OS keyring (macOS Keychain, Windows Credential Manager, or Secret Service). On machines without a keyring, pass `--insecure-storage`. For CI, set `REEARTH_TOKEN`.
 
-## Development
+## Contributing
 
-```sh
-make build     # ./bin/reearth
-make test
-make lint
-make snapshot  # cross-build every release artifact into ./dist
-```
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the design, how to add a product, development setup and the release process.
 
-To sign in with a development build, point it at an Auth0 tenant:
+## License
 
-```sh
-export REEARTH_AUTH_DOMAIN=example.auth0.com REEARTH_AUTH_CLIENT_ID=xxx REEARTH_AUTH_AUDIENCE=https://api.example
-```
-
-### Layout
-
-```
-cmd/reearth/         the distributed binary: all products + upgrade + extensions
-cmd/reearth-<p>/     standalone product binaries (go install only)
-sdk/                 the library that products build on
-  app/               assembles products and core commands into a CLI
-  core/              the Product interface and the Factory passed to commands
-  corecmd/           login, account, auth, api, config, skills, doctor, version
-  auth/ credstore/   login flows, accounts, token refresh, keyring
-  output/ iostreams/ human and machine output, TTY and agent detection
-  skills/            agent docs embedded in the binary
-products/<name>/     product commands (hello is a sample)
-internal/            self-update and extensions (binary-specific)
-docs/                GitHub Pages: install.sh
-```
-
-### Adding a product
-
-Implement `core.Product` in `products/<name>`, add it to `cmd/reearth/main.go`, and optionally add `cmd/reearth-<name>/main.go`:
-
-```go
-type Product struct{}
-
-func (Product) Name() string  { return "cms" }
-func (Product) Short() string { return "Manage Re:Earth CMS" }
-func (Product) Command(f *core.Factory) *cobra.Command { /* ... */ }
-
-// Optional:
-func (Product) BaseURL(env *auth.Env) string { return "https://api.cms.reearth.io/api" } // core.APIProduct
-func (Product) Skills() fs.FS { /* embedded markdown */ }                                // core.SkillsProduct
-```
-
-Inside commands, call `f.HTTPClient(ctx, product)` to get an authenticated client, and `f.Printer()` to print output that respects `--json`, `--jq` and `-o`.
-
-## Releasing
-
-Push a `vX.Y.Z` tag. The release workflow runs GoReleaser, which builds the archives and packages, signs the checksums with cosign (keyless), adds build provenance attestations, writes the changelog from Conventional Commits, and updates the Homebrew tap.
-
-Repository secrets:
-
-| Secret | Purpose |
-|---|---|
-| `REEARTH_AUTH0_DOMAIN`, `REEARTH_AUTH0_CLIENT_ID`, `REEARTH_AUTH0_AUDIENCE` | Production Auth0 native app (required) |
-| `REEARTH_AUTH0_STAGING_DOMAIN`, `..._CLIENT_ID`, `..._AUDIENCE` | Staging environment (optional) |
-
-The cask is pushed to `reearth/homebrew-tap` with a token minted from the org's `reearth-app` GitHub App (`vars.GH_APP_ID`, `secrets.GH_APP_PRIVATE_KEY`, `vars.GH_APP_USER`). Scoop and winget publishing is configured but skipped until `reearth/scoop-bucket` and a `winget-pkgs` fork exist.
+[MIT](LICENSE)
