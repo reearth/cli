@@ -175,7 +175,8 @@ Push a `vX.Y.Z` tag. The release workflow runs GoReleaser, which:
 - signs the checksums file with cosign (keyless)
 - adds build provenance attestations
 - writes the release notes
-- updates the Homebrew cask in `reearth/homebrew-tap`
+- updates the Homebrew cask in `reearth/homebrew-tap` and the Scoop manifest in `reearth/scoop-bucket`
+- submits the winget manifest to `microsoft/winget-pkgs` (when `WINGET_TOKEN` is set)
 
 Repository secrets:
 
@@ -183,7 +184,8 @@ Repository secrets:
 |---|---|
 | `REEARTH_AUTH0_DOMAIN`, `REEARTH_AUTH0_CLIENT_ID`, `REEARTH_AUTH0_AUDIENCE` | Production Auth0 native app (required; the workflow stops without them) |
 | `REEARTH_AUTH0_STAGING_DOMAIN`, `..._CLIENT_ID`, `..._AUDIENCE` | Built-in `--env staging` (optional) |
+| `WINGET_TOKEN` | Classic token with `public_repo` scope from an account that can push to `reearth/winget-pkgs` (optional) |
 
-The cask is pushed with a token minted from the org's `reearth-app` GitHub App (`vars.GH_APP_ID`, `secrets.GH_APP_PRIVATE_KEY`, `vars.GH_APP_USER`) and scoped to `homebrew-tap`. Scoop and winget publishing is configured but skipped until `reearth/scoop-bucket` and a `winget-pkgs` fork exist. At that point, add those repositories to the app token in the workflow.
+The Homebrew cask and the Scoop manifest are pushed with a token minted from the org's `reearth-app` GitHub App (`vars.GH_APP_ID`, `secrets.GH_APP_PRIVATE_KEY`, `vars.GH_APP_USER`) and scoped to `homebrew-tap` and `scoop-bucket`. winget publishing pushes a branch to `reearth/winget-pkgs` (a fork of `microsoft/winget-pkgs`) and opens a pull request upstream. The app is not installed on `microsoft/winget-pkgs` and cannot open that pull request, so winget needs a user token in the `WINGET_TOKEN` secret, and it is skipped while the secret is unset.
 
 All GitHub Actions are pinned to commit SHAs, and Dependabot keeps the pins up to date.

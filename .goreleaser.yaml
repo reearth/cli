@@ -118,9 +118,10 @@ scoops:
       owner: reearth
       name: scoop-bucket
       token: "{{ index .Env \"SCOOP_BUCKET_TOKEN\" }}"
+    directory: bucket
     commit_author:
-      name: reearth-bot
-      email: bot@reearth.io
+      name: '{{ index .Env "GH_APP_USER" }}'
+      email: '171218383+{{ index .Env "GH_APP_USER" }}@users.noreply.github.com'
     skip_upload: "{{ if index .Env \"SCOOP_BUCKET_TOKEN\" }}false{{ else }}true{{ end }}"
 
 winget:

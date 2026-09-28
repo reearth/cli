@@ -44,16 +44,16 @@ jobs:
           done
           exit "$missing"
 
-      # GITHUB_TOKEN can only write to this repository. Pushing the cask to
-      # reearth/homebrew-tap uses the org's reearth-app installation, with a
-      # token narrowed to that one repository.
+      # GITHUB_TOKEN can only write to this repository. Publishing to the
+      # Homebrew tap and the Scoop bucket uses the org's reearth-app
+      # installation, with a token narrowed to those repositories.
       - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         id: app-token
         with:
           app-id: ${{ vars.GH_APP_ID }}
           private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
           owner: reearth
-          repositories: homebrew-tap
+          repositories: homebrew-tap,scoop-bucket
 
       - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
 
@@ -65,9 +65,11 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HOMEBREW_TAP_TOKEN: ${{ steps.app-token.outputs.token }}
+          SCOOP_BUCKET_TOKEN: ${{ steps.app-token.outputs.token }}
           GH_APP_USER: ${{ vars.GH_APP_USER }}
-          # Scoop and winget are skipped until reearth/scoop-bucket and a fork of
-          # microsoft/winget-pkgs exist; then add them to the app token above.
+          # winget needs a user token: the pull request is opened on
+          # microsoft/winget-pkgs, where the app is not installed. Skipped if unset.
+          WINGET_TOKEN: ${{ secrets.WINGET_TOKEN }}
           REEARTH_AUTH0_DOMAIN: ${{ secrets.REEARTH_AUTH0_DOMAIN }}
           REEARTH_AUTH0_CLIENT_ID: ${{ secrets.REEARTH_AUTH0_CLIENT_ID }}
           REEARTH_AUTH0_AUDIENCE: ${{ secrets.REEARTH_AUTH0_AUDIENCE }}
