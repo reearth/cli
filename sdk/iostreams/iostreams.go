@@ -53,7 +53,7 @@ func System() *IOStreams {
 	s.stderrTTY = isTerminal(os.Stderr)
 	s.Agent = DetectAgent(os.Getenv)
 	s.CI = DetectCI(os.Getenv)
-	s.NoInput = truthy(os.Getenv("REEARTH_NO_INPUT"))
+	s.NoInput = EnvTrue(os.Getenv("REEARTH_NO_INPUT"))
 	s.outColor = colorEnabled(os.Getenv, s.stdoutTTY)
 	s.errColor = colorEnabled(os.Getenv, s.stderrTTY)
 	return s
@@ -207,14 +207,9 @@ func (s *IOStreams) Getenv(key string) string {
 	return s.getenv(key)
 }
 
-func truthy(v string) bool {
-	switch strings.ToLower(strings.TrimSpace(v)) {
-	case "1", "true", "yes", "on":
-		return true
-	}
-	return false
-}
-
+// colorEnabled follows the conventions of these variables rather than
+// ParseBool: any NO_COLOR disables color (no-color.org), and any
+// CLICOLOR_FORCE but "0" forces it (bixense.com/clicolors).
 func colorEnabled(getenv func(string) string, tty bool) bool {
 	if getenv("NO_COLOR") != "" {
 		return false

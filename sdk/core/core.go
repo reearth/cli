@@ -4,6 +4,7 @@ package core
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -42,14 +43,13 @@ type APIProduct interface {
 
 // GlobalFlags are the persistent flags shared by every command.
 type GlobalFlags struct {
-	Account   string
-	Workspace string
-	Output    output.Options
-	Yes       bool
-	NoInput   bool
-	NoColor   bool
-	Quiet     bool
-	Debug     bool
+	Account string
+	Output  output.Options
+	Yes     bool
+	NoInput bool
+	NoColor bool
+	Quiet   bool
+	Debug   bool
 }
 
 // Factory gives commands lazy access to shared services.
@@ -66,17 +66,27 @@ type Factory struct {
 	// DoctorChecks are extra checks for `doctor` contributed by the host binary.
 	DoctorChecks []func(ctx context.Context) []Check
 
-	once    sync.Once
-	cfg     *config.Config
-	cfgErr  error
-	project *config.Project
-	projErr error
-	auth    *auth.Manager
+	once     sync.Once
+	cfg      *config.Config
+	cfgErr   error
+	project  *config.Project
+	projErr  error
+	auth     *auth.Manager
+	projWarn sync.Once
+
+	mu sync.Mutex
+	// cfgReported is set once a config load error has been reported, as a
+	// warning or as the error of the command; see Setting.
+	cfgReported bool
 }
 
-// Config returns the loaded user config.
+// Config returns the loaded user config. When the file cannot be loaded, the
+// error names it and says how to fix it.
 func (f *Factory) Config() (*config.Config, error) {
 	f.load()
+	if f.cfgErr != nil {
+		f.reportConfigError(false)
+	}
 	return f.cfg, f.cfgErr
 }
 
@@ -92,11 +102,23 @@ func (f *Factory) load() {
 		if wd, err := os.Getwd(); err == nil {
 			f.project, f.projErr = config.FindProject(wd)
 		}
-		if f.cfgErr == nil {
-			f.auth = auth.NewManager(f.cfg, f.AppName)
-			f.auth.HTTPClient = f.baseHTTPClient(nil)
+		cfg := f.cfg
+		if f.cfgErr != nil {
+			f.cfgErr = configError(f.cfgErr)
+			// Accounts from REEARTH_TOKEN do not need the file.
+			cfg = &config.Config{}
 		}
+		f.auth = auth.NewManager(cfg, f.AppName)
+		f.auth.HTTPClient = f.baseHTTPClient(nil)
 	})
+}
+
+func configError(err error) error {
+	hint := "fix the file, or move it away to start with an empty configuration"
+	if errors.Is(err, config.ErrNewerVersion) {
+		hint = ""
+	}
+	return &cmdutil.Error{Exit: cmdutil.ExitError, Code: "config.invalid", Message: err.Error(), Hint: hint, Err: err}
 }
 
 // SetConfig injects a config (for tests).
@@ -105,39 +127,112 @@ func (f *Factory) SetConfig(cfg *config.Config, m *auth.Manager) {
 	f.cfg, f.auth = cfg, m
 }
 
-// Auth returns the account manager.
+// Auth returns the account manager, for core commands that manage accounts
+// and credentials. Products must not call it: the manager hands out token
+// strings. Products use HTTPClient.
 func (f *Factory) Auth() (*auth.Manager, error) {
-	f.load()
-	if f.cfgErr != nil {
-		return nil, f.cfgErr
+	if _, err := f.Config(); err != nil {
+		return nil, err
 	}
 	return f.auth, nil
 }
 
-// Account resolves the account for this invocation.
+// Account resolves the account for this invocation. REEARTH_TOKEN needs no
+// config file, so a broken one is then only warned about.
 func (f *Factory) Account() (*auth.Resolved, error) {
-	m, err := f.Auth()
-	if err != nil {
-		return nil, err
+	f.load()
+	m := f.auth
+	getenv := m.Getenv
+	if getenv == nil {
+		getenv = os.Getenv
+	}
+	if f.cfgErr != nil {
+		if f.Flags.Account != "" || getenv("REEARTH_TOKEN") == "" {
+			return nil, f.configErr()
+		}
+		f.reportConfigError(true)
 	}
 	proj, err := f.Project()
 	if err != nil {
-		return nil, err
+		// --account, REEARTH_TOKEN and REEARTH_ACCOUNT take precedence over
+		// the project file, so a broken one does not matter to them.
+		if f.Flags.Account == "" && getenv("REEARTH_TOKEN") == "" && getenv("REEARTH_ACCOUNT") == "" {
+			return nil, err
+		}
+		f.projWarn.Do(func() { f.warnIgnored(err) })
 	}
 	return m.Resolve(f.Flags.Account, proj)
 }
 
+// configErr returns the config load error for a command that fails on it.
+func (f *Factory) configErr() error {
+	_, err := f.Config()
+	return err
+}
+
+// OptionalProject returns the project file, or nil when there is none or it
+// cannot be loaded. A load error is printed once as a warning.
+func (f *Factory) OptionalProject() *config.Project {
+	proj, err := f.Project()
+	if err != nil {
+		f.projWarn.Do(func() { f.warnIgnored(err) })
+	}
+	return proj
+}
+
+// Setting resolves a setting (see config.Config.Get). When the config file
+// cannot be loaded, it resolves from the environment and the defaults, so
+// that commands which do not need the file still run. Their warning about the
+// file waits until the command shows it runs without it, by creating a
+// Printer or using a token from the environment, so that a command that
+// fails on the file reports only the load error. A command that reports the
+// error itself, like doctor, calls Config first, which suppresses the warning.
+func (f *Factory) Setting(key string) (string, config.Origin) {
+	f.load()
+	cfg := f.cfg
+	if f.cfgErr != nil {
+		cfg = &config.Config{}
+	}
+	v, o, _ := cfg.Get(key)
+	return v, o
+}
+
+// reportConfigError marks the config load error as reported, and warns that
+// the file is ignored when warn is set. Only the first call counts.
+func (f *Factory) reportConfigError(warn bool) {
+	f.mu.Lock()
+	done := f.cfgReported
+	f.cfgReported = true
+	f.mu.Unlock()
+	if warn && !done {
+		f.warnIgnored(f.cfgErr)
+	}
+}
+
+func (f *Factory) warnIgnored(err error) {
+	f.IO.Warn("ignoring a file that cannot be loaded: %v", err)
+}
+
 // Printer returns the output printer configured from global flags.
 func (f *Factory) Printer() (*output.Printer, error) {
-	def := ""
-	if cfg, err := f.Config(); err == nil {
-		def, _, _ = cfg.Get("output")
+	def, origin := f.Setting("output")
+	if f.cfgErr != nil {
+		f.reportConfigError(true)
 	}
-	p, err := output.NewPrinter(f.IO, f.Flags.Output, def)
-	if err != nil {
-		return nil, cmdutil.FlagErrorf("%s", err.Error())
+	o := f.Flags.Output
+	p, err := output.NewPrinter(f.IO, o, def)
+	if err == nil {
+		return p, nil
 	}
-	return p, nil
+	if o.Output == "" && o.JSON == "" && o.JQ == "" {
+		// Only the default format can be wrong.
+		src, hint := "the output setting in "+config.Path(), fmt.Sprintf("run `%s config set output <format>`", f.AppName)
+		if origin == config.OriginEnv {
+			src, hint = config.SettingEnv("output"), "set "+config.SettingEnv("output")+" to a valid format, or unset it"
+		}
+		return nil, &cmdutil.Error{Exit: cmdutil.ExitUsage, Code: "usage", Message: fmt.Sprintf("%s: %s", src, err), Hint: hint}
+	}
+	return nil, cmdutil.FlagErrorf("%s", err.Error())
 }
 
 // Confirm asks for confirmation of a destructive action. --yes skips it;
@@ -178,9 +273,10 @@ func (f *Factory) PublicHTTPClient() *http.Client {
 // REEARTH_<PRODUCT>_TOKEN, if set, is used as a static token for that product.
 func (f *Factory) HTTPClient(ctx context.Context, p Product) (*http.Client, error) {
 	if tok := os.Getenv(ProductEnv(p, "TOKEN")); tok != "" {
-		m, err := f.Auth()
-		if err != nil {
-			return nil, err
+		f.load()
+		m := f.auth
+		if f.cfgErr != nil {
+			f.reportConfigError(true)
 		}
 		ts, _ := m.TokenSource(&auth.Resolved{Token: tok, Source: ProductEnv(p, "TOKEN")})
 		return f.baseHTTPClient(ts), nil
@@ -194,8 +290,7 @@ func (f *Factory) HTTPClient(ctx context.Context, p Product) (*http.Client, erro
 			fmt.Sprintf("account %q holds a token for %s, not %s", r.DisplayName(), r.Account.Product, p.Name()),
 			fmt.Sprintf("use --account to select another account, or `%s login --with-token --product %s`", f.AppName, p.Name()))
 	}
-	m, _ := f.Auth()
-	ts, err := m.TokenSource(r)
+	ts, err := f.auth.TokenSource(r)
 	if err != nil {
 		return nil, err
 	}
@@ -203,14 +298,18 @@ func (f *Factory) HTTPClient(ctx context.Context, p Product) (*http.Client, erro
 }
 
 // Env returns the auth environment of the resolved account (prod if none).
+// A broken config file fails it unless the account comes from REEARTH_TOKEN.
 func (f *Factory) Env() (*auth.Env, error) {
-	cfg, err := f.Config()
-	if err != nil {
-		return nil, err
-	}
 	name := os.Getenv("REEARTH_ENV")
-	if r, err := f.Account(); err == nil {
+	r, err := f.Account()
+	if err == nil {
 		name = r.Account.Env
+	} else if f.cfgErr != nil {
+		return nil, f.configErr()
+	}
+	cfg := f.cfg
+	if cfg == nil {
+		cfg = &config.Config{}
 	}
 	return auth.ResolveEnv(cfg, name)
 }
@@ -246,8 +345,7 @@ func (f *Factory) ProjectValue(p Product, key, flagValue string) string {
 	if v := os.Getenv(ProductEnv(p, strings.ToUpper(key))); v != "" {
 		return v
 	}
-	proj, _ := f.Project()
-	v, _ := proj.Value(p.Name(), key)
+	v, _ := f.OptionalProject().Value(p.Name(), key)
 	return v
 }
 

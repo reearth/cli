@@ -61,9 +61,6 @@ func NotFoundf(format string, args ...any) *Error {
 // ErrCancel is returned when the user aborts an operation.
 var ErrCancel = &Error{Exit: ExitCancel, Code: "cancelled", Message: "cancelled"}
 
-// ErrSilent signals that the error has already been reported to the user.
-var ErrSilent = errors.New("silent error")
-
 // NoInputError is returned when a value is required but prompting is not possible.
 func NoInputError(what, flag string) *Error {
 	return &Error{

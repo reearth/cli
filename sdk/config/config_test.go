@@ -92,10 +92,98 @@ func TestFindProject(t *testing.T) {
 }
 
 func TestProjectRejectsSecrets(t *testing.T) {
-	root := t.TempDir()
-	_ = os.WriteFile(filepath.Join(root, ".reearth.yaml"), []byte("cms:\n  token: secret_abc\n"), 0o644)
-	_, err := FindProject(root)
-	if err == nil || !strings.Contains(err.Error(), "looks like a secret") {
-		t.Fatalf("err = %v", err)
+	for file, key := range map[string]string{
+		"cms:\n  token: secret_abc\n":                       "cms.token",
+		"cms:\n  auth:\n    Token: abc\n":                   "cms.auth.Token",
+		"cms:\n  hooks:\n    - name: a\n      API_KEY: x\n": "cms.hooks[0].API_KEY",
+		"secrets:\n  a: b\n":                                "secrets",
+	} {
+		root := t.TempDir()
+		_ = os.WriteFile(filepath.Join(root, ".reearth.yaml"), []byte(file), 0o644)
+		_, err := FindProject(root)
+		if err == nil || !strings.Contains(err.Error(), key+" looks like a secret") {
+			t.Errorf("%q: err = %v", file, err)
+		}
+	}
+}
+
+func TestSaveKeepsUnknownFields(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	_ = os.WriteFile(path, []byte("version: 1\nfuture_field: keepme\nsettings:\n  bogus: 1\n"), 0o600)
+	c, err := LoadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Set("output", "json"); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Save(); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := os.ReadFile(path)
+	for _, want := range []string{"future_field: keepme\n", "bogus: 1\n", "output: json\n"} {
+		if !strings.Contains(string(b), want) {
+			t.Errorf("saved config lacks %q:\n%s", want, b)
+		}
+	}
+}
+
+func TestSaveKeepsNestedUnknownFields(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	in := `version: 1
+accounts:
+  work:
+    env: prod
+    kind: oauth
+    future_acct_field: a
+    user:
+      sub: s
+      future_user_field: b
+envs:
+  mine:
+    auth:
+      domain: d
+      client_id: c
+      future_auth_field: c
+    products:
+      cms:
+        base_url: u
+        future_product_field: d
+    future_env_field: e
+`
+	_ = os.WriteFile(path, []byte(in), 0o600)
+	c, err := LoadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Set("browser", "echo"); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Save(); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := os.ReadFile(path)
+	for _, want := range []string{
+		"future_acct_field: a\n", "future_user_field: b\n", "future_auth_field: c\n",
+		"future_product_field: d\n", "future_env_field: e\n", "browser: echo\n",
+	} {
+		if !strings.Contains(string(b), want) {
+			t.Errorf("saved config lacks %q:\n%s", want, b)
+		}
+	}
+}
+
+func TestInvalidVersion(t *testing.T) {
+	for _, v := range []string{"0", "-5"} {
+		path := filepath.Join(t.TempDir(), "config.yaml")
+		_ = os.WriteFile(path, []byte("version: "+v+"\n"), 0o600)
+		if _, err := LoadFile(path); err == nil || !strings.Contains(err.Error(), "invalid config version") {
+			t.Errorf("version %s: err = %v", v, err)
+		}
+	}
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	_ = os.WriteFile(path, []byte("active: a\n"), 0o600)
+	if c, err := LoadFile(path); err != nil || c.Version != 1 {
+		t.Errorf("missing version: %v", err)
 	}
 }

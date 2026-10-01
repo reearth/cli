@@ -45,13 +45,7 @@
         "name": "quiet",
         "shorthand": "q",
         "type": "bool",
-        "usage": "Only print data and errors"
-      },
-      {
-        "name": "workspace",
-        "shorthand": "w",
-        "type": "string",
-        "usage": "Workspace ID"
+        "usage": "Only print data, warnings and errors"
       },
       {
         "name": "yes",

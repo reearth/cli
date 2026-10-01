@@ -12,6 +12,8 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/cli/browser"
@@ -58,24 +60,60 @@ func Main(p core.Product) {
 
 // Run executes the CLI with args and returns the exit code.
 func Run(o Options, args []string) int {
-	f := NewFactory(o, iostreams.System())
+	o = symlinkOptions(o, os.Args[0])
+	return Execute(NewFactory(o, iostreams.System()), o, args)
+}
 
-	// busybox-style dispatch: invoking the unified binary as "reearth-cms"
-	// behaves like "reearth cms".
-	if !o.Standalone {
-		exe := strings.TrimSuffix(filepath.Base(os.Args[0]), ".exe")
-		if name, ok := strings.CutPrefix(exe, o.Name+"-"); ok {
-			if _, found := f.FindProduct(name); found {
-				args = append([]string{name}, args...)
-			}
+// symlinkOptions implements busybox-style dispatch: the unified binary
+// invoked as "reearth-cms" runs exactly like the standalone binary that
+// Main builds. Host-only extras (Extra, Dispatch, BeforeRun, AfterRun and
+// DoctorChecks, such as upgrade, extensions and update notices) are not part
+// of the standalone experience and are dropped.
+func symlinkOptions(o Options, argv0 string) Options {
+	if o.Standalone {
+		return o
+	}
+	exe := strings.TrimSuffix(filepath.Base(argv0), ".exe")
+	name, ok := strings.CutPrefix(exe, o.Name+"-")
+	if !ok {
+		return o
+	}
+	for _, p := range o.Products {
+		if p.Name() == name {
+			return Options{Name: exe, Products: []core.Product{p}, Standalone: true}
 		}
 	}
-	return Execute(f, o, args)
+	return o
 }
 
 // Execute runs args against a Factory and returns the exit code.
 func Execute(f *core.Factory, o Options, args []string) int {
+	// --no-color must also hold for help and for errors that occur before
+	// the flags are parsed.
+	for _, a := range args {
+		if a == "--" {
+			break
+		}
+		if v, ok := strings.CutPrefix(a, "--no-color"); ok && (v == "" || strings.HasPrefix(v, "=")) {
+			if b, err := strconv.ParseBool(strings.TrimPrefix(v, "=")); v == "" || (err == nil && b) {
+				f.IO.SetColorEnabled(false)
+			}
+		}
+	}
 	root := NewRoot(f, o)
+	// Cobra prints the help of a command group, with exit code 0, when it is
+	// given an unknown subcommand. Report a usage error instead.
+	var unknown error
+	help := root.HelpFunc()
+	root.SetHelpFunc(func(c *cobra.Command, a []string) {
+		if h := c.Flags().Lookup("help"); !c.Runnable() && c.HasAvailableSubCommands() && (h == nil || !h.Changed) {
+			if rest := c.Flags().Args(); len(rest) > 0 {
+				unknown = &cmdutil.Error{Exit: cmdutil.ExitUsage, Code: "usage", Message: fmt.Sprintf("unknown command %q for %q", rest[0], c.CommandPath())}
+				return
+			}
+		}
+		help(c, a)
+	})
 	if o.Dispatch != nil {
 		if handled, code := o.Dispatch(f, root, args); handled {
 			return code
@@ -92,9 +130,12 @@ func Execute(f *core.Factory, o Options, args []string) int {
 	root.SetErr(f.IO.ErrOut)
 	cmd, err := root.ExecuteContextC(ctx)
 	f.IO.StopProgress()
+	if err == nil {
+		err = unknown
+	}
 	if err != nil {
 		err = classify(err)
-		reportError(f, cmd, err)
+		reportError(f, cmd, err, args)
 	}
 	if o.AfterRun != nil {
 		o.AfterRun(f, cmd, err)
@@ -118,13 +159,11 @@ func NewFactory(o Options, io *iostreams.IOStreams) *core.Factory {
 
 // openBrowser honors the "browser" setting (REEARTH_BROWSER), else the system default.
 func openBrowser(f *core.Factory, url string) error {
-	if cfg, err := f.Config(); err == nil {
-		if v, _, _ := cfg.Get("browser"); v != "" {
-			argv := append(strings.Fields(v), url)
-			c := exec.Command(argv[0], argv[1:]...)
-			c.Stdout, c.Stderr = io.Discard, io.Discard
-			return c.Start()
-		}
+	if v, _ := f.Setting("browser"); strings.TrimSpace(v) != "" {
+		argv := append(strings.Fields(v), url)
+		c := exec.Command(argv[0], argv[1:]...)
+		c.Stdout, c.Stderr = io.Discard, io.Discard
+		return c.Start()
 	}
 	// Keep stdout clean for data.
 	browser.Stdout, browser.Stderr = io.Discard, io.Discard
@@ -214,6 +253,12 @@ func NewRoot(f *core.Factory, o Options) *cobra.Command {
 	root.AddCommand(corecmd.NewHelpTopics(f)...)
 	root.SetHelpCommandGroupID(groupMore)
 	root.SetCompletionCommandGroupID(groupMore)
+	root.InitDefaultHelpCmd()
+	for _, c := range root.Commands() {
+		if c.Name() == "help" {
+			c.Run, c.RunE = nil, runHelp
+		}
+	}
 
 	standalone := ""
 	if o.Standalone && len(o.Products) == 1 {
@@ -221,6 +266,23 @@ func NewRoot(f *core.Factory, o Options) *cobra.Command {
 	}
 	finalize(root, o.Name, standalone, f)
 	return root
+}
+
+// runHelp replaces the Run of cobra's help command, which prints "Unknown
+// help topic" to stdout with exit code 0.
+func runHelp(c *cobra.Command, args []string) error {
+	cmd, rest, err := c.Root().Find(args)
+	if err != nil || cmd == nil || len(rest) > 0 {
+		return &cmdutil.Error{Exit: cmdutil.ExitUsage, Code: "usage",
+			Message: fmt.Sprintf("unknown help topic %q", strings.Join(args, " ")),
+			Hint:    fmt.Sprintf("run `%s --help` to list commands and help topics", c.Root().Name())}
+	}
+	if cmd.Context() == nil {
+		cmd.SetContext(c.Context())
+	}
+	cmd.InitDefaultHelpFlag()
+	cmd.InitDefaultVersionFlag()
+	return cmd.Help()
 }
 
 func mountStandalone(f *core.Factory, root *cobra.Command, p core.Product) {
@@ -259,12 +321,11 @@ func mountStandalone(f *core.Factory, root *cobra.Command, p core.Product) {
 func addGlobalFlags(f *core.Factory, fs *pflag.FlagSet) {
 	g := f.Flags
 	fs.StringVar(&g.Account, "account", "", "Account to use for this command")
-	fs.StringVarP(&g.Workspace, "workspace", "w", "", "Workspace ID")
 	g.Output.AddFlags(fs)
 	fs.BoolVarP(&g.Yes, "yes", "y", false, "Skip confirmation prompts")
 	fs.BoolVar(&g.NoInput, "no-input", false, "Never prompt; fail if input is required")
 	fs.BoolVar(&g.NoColor, "no-color", false, "Disable colors")
-	fs.BoolVarP(&g.Quiet, "quiet", "q", false, "Only print data and errors")
+	fs.BoolVarP(&g.Quiet, "quiet", "q", false, "Only print data, warnings and errors")
 	fs.BoolVar(&g.Debug, "debug", false, "Print HTTP traces to stderr (secrets masked)")
 }
 
@@ -279,13 +340,11 @@ func applyGlobalFlags(f *core.Factory) error {
 	if g.Quiet {
 		f.IO.Quiet = true
 	}
-	if v := f.IO.Getenv("REEARTH_DEBUG"); v != "" && v != "0" && v != "false" {
+	if iostreams.EnvTrue(f.IO.Getenv("REEARTH_DEBUG")) {
 		g.Debug = true
 	}
-	if cfg, err := f.Config(); err == nil {
-		if v, _, _ := cfg.Get("prompt"); v == "disabled" {
-			f.IO.NoInput = true
-		}
+	if v, _ := f.Setting("prompt"); v == "disabled" {
+		f.IO.NoInput = true
 	}
 	return nil
 }
@@ -324,10 +383,70 @@ func finalize(root *cobra.Command, name, standalone string, f *core.Factory) {
 	setHelp(root, f)
 }
 
-func wantsJSON(f *core.Factory) bool {
+// wantsJSON reports whether errors should be printed as JSON. It also reads
+// the raw args, because a flag error stops parsing before --json is seen.
+func wantsJSON(f *core.Factory, args []string) bool {
 	o := f.Flags.Output
-	return o.JSON != "" || o.JQ != "" || o.Output == "json" || o.Output == "ndjson"
+	if o.JSON != "" || o.JQ != "" || isJSONFormat(o.Output) {
+		return true
+	}
+	_, json := RawFlag(args, "json")
+	_, jq := RawFlag(args, "jq")
+	v, _ := RawFlag(args, "output", "o")
+	return json || jq || isJSONFormat(v)
 }
+
+func isJSONFormat(v string) bool {
+	v = strings.ToLower(v)
+	return v == "json" || v == "ndjson"
+}
+
+// RawFlag finds a global flag in unparsed args (--name, --name=v, --name v,
+// -s v, -sv, -s=v) before "--". Without "=", the value is the next arg. As in
+// pflag, the shorthand may follow the boolean global shorthands (-yojson). It
+// is for reading flags when parsing may have failed.
+func RawFlag(args []string, name string, short ...string) (value string, ok bool) {
+	next := func(i int) string {
+		if i+1 < len(args) {
+			return args[i+1]
+		}
+		return ""
+	}
+	for i, a := range args {
+		if a == "--" {
+			break
+		}
+		if rest, found := strings.CutPrefix(a, "--"+name); found {
+			if rest == "" {
+				return next(i), true
+			}
+			if v, found := strings.CutPrefix(rest, "="); found {
+				return v, true
+			}
+		}
+		if len(short) == 0 || !strings.HasPrefix(a, "-") || strings.HasPrefix(a, "--") {
+			continue
+		}
+		cluster := a[1:]
+		for cluster != "" {
+			if slices.Contains(short, cluster[:1]) {
+				if rest := cluster[1:]; rest != "" {
+					return strings.TrimPrefix(rest, "="), true
+				}
+				return next(i), true
+			}
+			if !strings.Contains(boolShorthands, cluster[:1]) {
+				break
+			}
+			cluster = cluster[1:]
+		}
+	}
+	return "", false
+}
+
+// boolShorthands are the global boolean shorthands (-y, -q), which pflag lets
+// other shorthands follow in one arg.
+const boolShorthands = "yq"
 
 // classify turns cobra's plain usage errors into usage errors (exit code 2).
 func classify(err error) error {
@@ -337,7 +456,7 @@ func classify(err error) error {
 	return err
 }
 
-func reportError(f *core.Factory, cmd *cobra.Command, err error) {
+func reportError(f *core.Factory, cmd *cobra.Command, err error, args []string) {
 	e := cmdutil.AsError(err)
 	if e.Silent {
 		return
@@ -346,7 +465,7 @@ func reportError(f *core.Factory, cmd *cobra.Command, err error) {
 		e.Hint = fmt.Sprintf("run `%s --help` for usage", cmd.CommandPath())
 	}
 	w := f.IO.ErrOut
-	if wantsJSON(f) {
+	if wantsJSON(f, args) {
 		b, _ := json.Marshal(map[string]any{"error": e})
 		_, _ = fmt.Fprintln(w, string(b))
 		return

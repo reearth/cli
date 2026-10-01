@@ -127,7 +127,7 @@ func NewCmdConfig(f *core.Factory) *cobra.Command {
 				}
 				entries = append(entries, entry{s.Key, v, origin})
 			}
-			if proj, _ := f.Project(); proj != nil {
+			if proj := f.OptionalProject(); proj != nil {
 				if proj.Account != "" {
 					entries = append(entries, entry{"account", proj.Account, proj.Path()})
 				}
@@ -181,7 +181,7 @@ func NewCmdConfig(f *core.Factory) *cobra.Command {
 				"cache":  config.CacheDir(),
 				"data":   config.DataDir(),
 			}
-			if proj, _ := f.Project(); proj != nil {
+			if proj := f.OptionalProject(); proj != nil {
 				paths["project"] = proj.Path()
 			}
 			return p.Print(paths, func() error {

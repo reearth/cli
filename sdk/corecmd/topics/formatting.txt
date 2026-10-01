@@ -17,8 +17,11 @@ Change the default format on a TTY with `{{app}} config set output <format>`.
 
 Errors
 
-With --json, an error is also printed to stderr as JSON:
+With --json, --jq, -o json or -o ndjson, an error is also printed to stderr as
+JSON, even when another flag is wrong:
 
   {"error":{"code":"auth.reauth_required","message":"...","hint":"..."}}
+
+It is the last line of stderr; warnings printed before it are plain text.
 
 The code is stable. See `{{app}} help exit-codes` for the exit status.

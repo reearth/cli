@@ -11,6 +11,8 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/spf13/cobra"
+
 	"github.com/reearth/cli/products/hello"
 	"github.com/reearth/cli/sdk/app"
 	"github.com/reearth/cli/sdk/cmdutil"
@@ -173,7 +175,7 @@ func TestOAuthLoginAndAuthenticatedCalls(t *testing.T) {
 		t.Fatalf("auth status = %+v", r)
 	}
 
-	if r := run(t, unified, "", nil, "logout"); r.code != 0 || revoked.Load() != 1 {
+	if r := run(t, unified, "", nil, "logout", "--yes"); r.code != 0 || revoked.Load() != 1 {
 		t.Fatalf("logout = %+v, revoked %d", r, revoked.Load())
 	}
 	if r := run(t, unified, "", nil, "hello", "me"); r.code != cmdutil.ExitAuth {
@@ -301,5 +303,171 @@ func TestDocs(t *testing.T) {
 	}
 	if r := run(t, unified, "", nil, "docs", "read", "nope"); r.code != cmdutil.ExitNotFound {
 		t.Fatalf("missing page = %+v", r)
+	}
+}
+
+func TestUsageErrors(t *testing.T) {
+	setup(t)
+	for _, tc := range []struct {
+		args []string
+		msg  string
+	}{
+		{[]string{"hello", "nope"}, `unknown command "nope" for "reearth hello"`},
+		{[]string{"config", "nope"}, `unknown command "nope" for "reearth config"`},
+		{[]string{"help", "nope"}, `unknown help topic "nope"`},
+		{[]string{"help", "hello", "nope"}, `unknown help topic "hello nope"`},
+	} {
+		r := run(t, unified, "", nil, tc.args...)
+		if r.code != cmdutil.ExitUsage || r.out != "" || !strings.Contains(r.errOut, tc.msg) {
+			t.Errorf("%v: %+v", tc.args, r)
+		}
+	}
+	if r := run(t, unified, "", nil, "hello"); r.code != 0 || !strings.Contains(r.out, "Usage") {
+		t.Errorf("group without args: %+v", r)
+	}
+	if r := run(t, unified, "", nil, "help", "hello"); r.code != 0 || !strings.Contains(r.out, "reearth hello <command>") {
+		t.Errorf("help hello: %+v", r)
+	}
+}
+
+func TestJSONErrors(t *testing.T) {
+	setup(t)
+	for _, args := range [][]string{
+		{"whoami", "-o", "JSON"},
+		{"hello", "world", "--bogus", "--json"},
+		{"hello", "world", "--bogus", "--jq", ".x"},
+		{"hello", "world", "--bogus", "--output=ndjson"},
+		{"hello", "world", "--bogus", "-ojson"},
+		{"hello", "world", "--bogus", "-yojson"},
+		{"hello", "world", "--bogus", "-qo", "json"},
+	} {
+		r := run(t, unified, "", nil, args...)
+		var e struct {
+			Error cmdutil.Error `json:"error"`
+		}
+		if err := json.Unmarshal([]byte(r.errOut), &e); err != nil || e.Error.Code == "" {
+			t.Errorf("%v: stderr = %q", args, r.errOut)
+		}
+	}
+	if r := run(t, unified, "", nil, "hello", "world", "--bogus", "--", "--json"); strings.HasPrefix(r.errOut, "{") {
+		t.Errorf("--json after -- is an argument: %q", r.errOut)
+	}
+}
+
+func TestNoColor(t *testing.T) {
+	setup(t)
+	exec := func(args ...string) result {
+		ios, _, out, errOut := iostreams.Test()
+		ios.SetColorEnabled(true)
+		code := app.Execute(app.NewFactory(unified, ios), unified, args)
+		return result{out.String(), errOut.String(), code}
+	}
+	if r := exec("hello", "--help"); !strings.Contains(r.out, "\x1b[") {
+		t.Fatal("help is not colored without --no-color")
+	}
+	if r := exec("hello", "--help", "--no-color"); strings.Contains(r.out, "\x1b[") {
+		t.Errorf("help colored with --no-color: %q", r.out)
+	}
+	if r := exec("hello", "world", "--bogus", "--no-color"); r.code != cmdutil.ExitUsage || strings.Contains(r.errOut, "\x1b[") {
+		t.Errorf("flag error colored with --no-color: %+v", r)
+	}
+}
+
+func TestSymlinkDispatch(t *testing.T) {
+	setup(t)
+	host := unified
+	host.Extra = func(f *core.Factory) []*cobra.Command {
+		return []*cobra.Command{{Use: "upgrade", Run: func(*cobra.Command, []string) {}}}
+	}
+	if o := app.SymlinkOptions(host, "/usr/local/bin/reearth"); o.Standalone {
+		t.Fatal("plain name dispatched")
+	}
+	if o := app.SymlinkOptions(host, "/usr/local/bin/reearth-nope"); o.Standalone {
+		t.Fatal("unknown product dispatched")
+	}
+	o := app.SymlinkOptions(host, "/usr/local/bin/reearth-hello.exe")
+	if o.Name != "reearth-hello" || !o.Standalone || len(o.Products) != 1 || o.Extra != nil {
+		t.Fatalf("options = %+v", o)
+	}
+	if r := run(t, o, "", nil, "search", "greeting"); !strings.HasPrefix(r.out, "reearth-hello world\t") {
+		t.Errorf("search = %+v", r)
+	}
+	if r := run(t, o, "", nil, "version"); !strings.HasPrefix(r.out, "reearth-hello ") {
+		t.Errorf("version = %+v", r)
+	}
+	if r := run(t, o, "", nil, "skills", "install", "--print"); r.code != 0 || !strings.Contains(r.out, "name: reearth-hello") {
+		t.Errorf("skills install --print = %+v", r)
+	}
+	if r := run(t, o, "", nil, "upgrade"); r.code != cmdutil.ExitUsage {
+		t.Errorf("host-only command available: %+v", r)
+	}
+}
+
+func TestBrokenFilesWarn(t *testing.T) {
+	setup(t)
+	dir := os.Getenv("REEARTH_CONFIG_DIR")
+	_ = os.MkdirAll(dir, 0o700)
+	_ = os.WriteFile(filepath.Join(dir, "config.yaml"), []byte("settings: [\n"), 0o600)
+	r := run(t, unified, "", nil, "hello", "world")
+	if r.code != 0 || r.out != "Hello, world!\n" || strings.Count(r.errOut, "config.yaml") != 1 {
+		t.Fatalf("broken config.yaml: %+v", r)
+	}
+	_ = os.Remove(filepath.Join(dir, "config.yaml"))
+
+	_ = os.WriteFile(".reearth.yaml", []byte("cms:\n  auth:\n    token: abc\n"), 0o644)
+	if r := run(t, unified, "", nil, "whoami"); r.code == 0 || !strings.Contains(r.errOut, "cms.auth.token looks like a secret") {
+		t.Fatalf("a broken project file must stop account resolution: %+v", r)
+	}
+	t.Setenv("REEARTH_TOKEN", "x")
+	r = run(t, unified, "", nil, "whoami", "--json")
+	if r.code != 0 || !strings.Contains(r.out, `"source": "REEARTH_TOKEN"`) || !strings.Contains(r.errOut, ".reearth.yaml") {
+		t.Fatalf("REEARTH_TOKEN with a broken project file: %+v", r)
+	}
+	if r := run(t, unified, "", nil, "config", "list", "--json"); strings.Contains(r.out, "abc") || !strings.Contains(r.errOut, ".reearth.yaml") {
+		t.Fatalf("config list: %+v", r)
+	}
+}
+
+func TestBrokenConfig(t *testing.T) {
+	for name, content := range map[string]string{"bad yaml": "settings: [\n", "bad version": "version: -5\n"} {
+		t.Run(name, func(t *testing.T) {
+			setup(t)
+			dir := os.Getenv("REEARTH_CONFIG_DIR")
+			_ = os.MkdirAll(dir, 0o700)
+			_ = os.WriteFile(filepath.Join(dir, "config.yaml"), []byte(content), 0o600)
+			// Commands that need the file fail with one error that says how to fix it.
+			for _, args := range [][]string{{"config", "list"}, {"whoami"}, {"account", "list"}, {"config", "set", "browser", "echo"}} {
+				r := run(t, unified, "", nil, args...)
+				if r.code != cmdutil.ExitError || strings.Contains(r.errOut, "ignoring") || strings.Count(r.errOut, "config.yaml") != 1 || !strings.Contains(r.errOut, "fix the file") {
+					t.Errorf("%v: %+v", args, r)
+				}
+			}
+			// Commands that do not need it run with one warning.
+			for _, args := range [][]string{{"config", "path"}, {"version"}, {"search", "login"}} {
+				r := run(t, unified, "", nil, args...)
+				if r.code != 0 || r.out == "" || strings.Count(r.errOut, "ignoring a file that cannot be loaded") != 1 {
+					t.Errorf("%v: %+v", args, r)
+				}
+			}
+			t.Setenv("REEARTH_TOKEN", "x")
+			r := run(t, unified, "", nil, "whoami", "--json")
+			if r.code != 0 || !strings.Contains(r.out, `"source": "REEARTH_TOKEN"`) || strings.Count(r.errOut, "ignoring a file that cannot be loaded") != 1 {
+				t.Errorf("REEARTH_TOKEN whoami: %+v", r)
+			}
+			if r := run(t, unified, "", nil, "whoami", "--account", "a"); r.code != cmdutil.ExitError || strings.Contains(r.errOut, "ignoring") {
+				t.Errorf("--account needs the file: %+v", r)
+			}
+		})
+	}
+}
+
+func TestInvalidOutputSetting(t *testing.T) {
+	setup(t)
+	t.Setenv("REEARTH_OUTPUT", "xml")
+	ios, _, _, errOut := iostreams.Test()
+	ios.SetTTY(false, true, false)
+	code := app.Execute(app.NewFactory(unified, ios), unified, []string{"version"})
+	if code != cmdutil.ExitUsage || !strings.Contains(errOut.String(), "REEARTH_OUTPUT") || strings.Contains(errOut.String(), "--help") {
+		t.Fatalf("code %d, stderr %q", code, errOut.String())
 	}
 }

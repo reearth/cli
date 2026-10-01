@@ -7,12 +7,19 @@ Accounts and credentials
   REEARTH_ACCOUNT             Use this stored account instead of the active one
   REEARTH_ENV                 Environment for REEARTH_TOKEN: prod, staging, or
                               one defined under envs: in the config file
+  REEARTH_AUTH_DOMAIN, REEARTH_AUTH_CLIENT_ID, REEARTH_AUTH_AUDIENCE
+                              The Auth0 tenant to sign in with (development
+                              builds only)
+  GH_TOKEN, GITHUB_TOKEN      Sent to the GitHub API by upgrade, update checks
+                              and extension commands, to raise its rate limit
+                              (reearth only)
 
 Products
 
   REEARTH_<PRODUCT>_BASE_URL  Send a product's API requests to this URL
   REEARTH_<PRODUCT>_<KEY>     A product-scoped default, such as
-                              REEARTH_CMS_PROJECT; overrides .reearth.yaml
+                              REEARTH_CMS_PROJECT, for products that read
+                              project defaults; overrides .reearth.yaml
   REEARTH_DOCS_URL            Read the documentation from this site instead of
                               https://docs.reearth.io
 
@@ -20,23 +27,51 @@ Settings (each overrides `{{app}} config`)
 
   REEARTH_OUTPUT              Default output format on a TTY
   REEARTH_PROMPT              "disabled" turns off interactive prompts
-  REEARTH_UPDATE_CHECK        "disabled" turns off update checks
+  REEARTH_UPDATE_CHECK        "disabled" turns off update checks (reearth only)
   REEARTH_BROWSER             Command used to open URLs
 
 Behavior
 
+REEARTH_NO_INPUT, REEARTH_DEBUG and REEARTH_NO_UPDATE_NOTIFIER are on when set
+to 1, true, yes or on. REEARTH_AGENT and the CI variables take 0, false, no or
+off as false.
+
   REEARTH_NO_INPUT            Never prompt, as with --no-input
-  REEARTH_AGENT               Force agent mode on (1) or off (0); it is
-                              otherwise detected from the coding agent
+  REEARTH_AGENT               Force agent mode on (1) or off (0); any other
+                              value turns it on and names the agent. Agent
+                              mode is otherwise detected from CLAUDECODE,
+                              CURSOR_AGENT, CODEX_SANDBOX, CODEX_CI,
+                              GEMINI_CLI, OPENCODE or AMP_AGENT
+  CI, GITHUB_ACTIONS, BUILDKITE, CIRCLECI, GITLAB_CI, JENKINS_URL, TF_BUILD
+                              Detect CI, unless set to a false value; like
+                              agent mode, CI turns off prompts, spinners and
+                              update notices
   REEARTH_DEBUG               Print HTTP traces to stderr, as with --debug
-  REEARTH_NO_UPDATE_NOTIFIER  Do not print update notices
-  NO_COLOR, CLICOLOR_FORCE    Disable or force colors
+  REEARTH_NO_UPDATE_NOTIFIER  Do not print update notices (reearth only)
+  NO_COLOR                    Disable colors when set to any value
+  CLICOLOR_FORCE              Force colors, even when not writing to a
+                              terminal, when set to any value but 0; NO_COLOR
+                              wins. TERM=dumb disables colors unless forced
+
+Login
+
+`{{app}} login` picks the device flow instead of a browser on this machine
+when one of these is set: SSH_CONNECTION, SSH_CLIENT or SSH_TTY;
+CODESPACES=true, GITPOD_WORKSPACE_ID or REMOTE_CONTAINERS=true; BROWSER=none.
+On Linux, it also does so in a container or when neither DISPLAY nor
+WAYLAND_DISPLAY is set, unless WSL_DISTRO_NAME is set.
 
 Locations
 
-  REEARTH_CONFIG_DIR          Config files (default: ~/.config/reearth)
+  REEARTH_CONFIG_DIR          Config files (default: ~/.config/reearth;
+                              %AppData%\reearth on Windows)
   REEARTH_CACHE_DIR           Caches, such as the downloaded documentation
-  REEARTH_DATA_DIR            Installed extensions (default: ~/.local/share/reearth)
+                              (default: the OS cache directory, such as
+                              ~/Library/Caches/reearth on macOS)
+  REEARTH_DATA_DIR            Installed extensions, reearth only (default:
+                              ~/.local/share/reearth; %LocalAppData%\reearth
+                              on Windows)
 
 XDG_CONFIG_HOME, XDG_CACHE_HOME and XDG_DATA_HOME are honored when the
-REEARTH_ variables are unset.
+REEARTH_ variables are unset. `reearth upgrade` reads GOBIN and GOPATH to tell
+whether `go install` installed the binary.

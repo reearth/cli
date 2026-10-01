@@ -17,6 +17,10 @@ import (
 
 const currentVersion = 1
 
+// ErrNewerVersion is wrapped by the error LoadFile returns for a file written
+// by a newer version of the CLI.
+var ErrNewerVersion = errors.New("written by a newer version of the CLI")
+
 // Account kinds.
 const (
 	KindOAuth = "oauth"
@@ -28,7 +32,12 @@ type Config struct {
 	Active   string                `yaml:"active,omitempty"`
 	Accounts map[string]*Account   `yaml:"accounts,omitempty"`
 	Envs     map[string]*EnvConfig `yaml:"envs,omitempty"`
-	Settings map[string]string     `yaml:"settings,omitempty"`
+	// Settings keeps values of keys this version does not know as written.
+	Settings map[string]any `yaml:"settings,omitempty"`
+	// Extra keeps top-level fields this version does not know, so that saving
+	// does not erase what a newer version wrote. The nested structs below
+	// keep theirs the same way.
+	Extra map[string]any `yaml:",inline" json:"-"`
 
 	path string
 }
@@ -42,28 +51,38 @@ type Account struct {
 	Workspace string `yaml:"workspace,omitempty" json:"workspace,omitempty"`
 	// InsecureStorage stores credentials in a plain file instead of the OS keyring.
 	InsecureStorage bool `yaml:"insecure_storage,omitempty" json:"insecure_storage,omitempty"`
+
+	Extra map[string]any `yaml:",inline" json:"-"`
 }
 
 type User struct {
 	Sub   string `yaml:"sub" json:"sub"`
 	Email string `yaml:"email,omitempty" json:"email,omitempty"`
 	Name  string `yaml:"name,omitempty" json:"name,omitempty"`
+
+	Extra map[string]any `yaml:",inline" json:"-"`
 }
 
 // EnvConfig is a user-defined environment (on-premise, self-hosted Auth0, ...).
 type EnvConfig struct {
 	Auth     EnvAuth               `yaml:"auth"`
 	Products map[string]EnvProduct `yaml:"products,omitempty"`
+
+	Extra map[string]any `yaml:",inline" json:"-"`
 }
 
 type EnvAuth struct {
 	Domain   string `yaml:"domain"`
 	ClientID string `yaml:"client_id"`
 	Audience string `yaml:"audience,omitempty"`
+
+	Extra map[string]any `yaml:",inline" json:"-"`
 }
 
 type EnvProduct struct {
 	BaseURL string `yaml:"base_url"`
+
+	Extra map[string]any `yaml:",inline" json:"-"`
 }
 
 // Dir returns the configuration directory.
@@ -136,8 +155,11 @@ func LoadFile(path string) (*Config, error) {
 	if err := yaml.Unmarshal(b, c); err != nil {
 		return nil, fmt.Errorf("parse %s: %w", path, err)
 	}
+	if c.Version < 1 {
+		return nil, fmt.Errorf("%s: invalid config version %d", path, c.Version)
+	}
 	if c.Version > currentVersion {
-		return nil, fmt.Errorf("%s was written by a newer version of the CLI (config version %d); please upgrade", path, c.Version)
+		return nil, fmt.Errorf("%s was %w (config version %d); please upgrade", path, ErrNewerVersion, c.Version)
 	}
 	c.init()
 	return c, nil
@@ -151,7 +173,7 @@ func (c *Config) init() {
 		c.Envs = map[string]*EnvConfig{}
 	}
 	if c.Settings == nil {
-		c.Settings = map[string]string{}
+		c.Settings = map[string]any{}
 	}
 	c.Version = currentVersion
 }

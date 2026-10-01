@@ -19,7 +19,7 @@ type Setting struct {
 var Settings = []Setting{
 	{Key: "output", Description: "Default output format on a TTY", Default: "table", Allowed: []string{"table", "plain", "json", "yaml", "ndjson"}},
 	{Key: "prompt", Description: "Allow interactive prompts", Default: "enabled", Allowed: []string{"enabled", "disabled"}},
-	{Key: "update_check", Description: "Check for new CLI versions", Default: "enabled", Allowed: []string{"enabled", "disabled"}},
+	{Key: "update_check", Description: "Check for new reearth versions (reearth binary only)", Default: "enabled", Allowed: []string{"enabled", "disabled"}},
 	{Key: "browser", Description: "Command used to open URLs (empty: system default)"},
 }
 
@@ -57,8 +57,8 @@ func (c *Config) Get(key string) (string, Origin, error) {
 	if v := os.Getenv(SettingEnv(key)); v != "" {
 		return v, OriginEnv, nil
 	}
-	if v, ok := c.Settings[key]; ok {
-		return v, OriginConfig, nil
+	if v, ok := c.Settings[key]; ok && v != nil {
+		return fmt.Sprint(v), OriginConfig, nil
 	}
 	return s.Default, OriginDefault, nil
 }

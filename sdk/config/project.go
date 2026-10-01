@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"go.yaml.in/yaml/v3"
@@ -73,15 +74,56 @@ func (p *Project) Value(product, key string) (string, bool) {
 var secretLikeKeys = []string{"token", "secret", "password", "credential", "api_key", "apikey"}
 
 func (p *Project) validate() error {
-	for product, values := range p.Products {
-		for k := range values {
+	products := make(map[string]any, len(p.Products))
+	for name, values := range p.Products {
+		products[name] = values
+	}
+	if key := secretKey("", products); key != "" {
+		return fmt.Errorf("%s: %s looks like a secret; project files must not contain credentials (use `reearth login --with-token` instead)", p.path, key)
+	}
+	return nil
+}
+
+// secretKey returns the path of the first secret-like key in v, at any depth, or "".
+func secretKey(path string, v any) string {
+	switch v := v.(type) {
+	case map[string]any:
+		for _, k := range sortedKeys(v) {
+			kp := k
+			if path != "" {
+				kp = path + "." + k
+			}
 			lk := strings.ToLower(k)
 			for _, s := range secretLikeKeys {
 				if strings.Contains(lk, s) {
-					return fmt.Errorf("%s: %s.%s looks like a secret; project files must not contain credentials (use `reearth login --with-token` instead)", p.path, product, k)
+					return kp
 				}
+			}
+			if s := secretKey(kp, v[k]); s != "" {
+				return s
+			}
+		}
+	case map[any]any: // a mapping with non-string keys
+		m := make(map[string]any, len(v))
+		for k, e := range v {
+			m[fmt.Sprint(k)] = e
+		}
+		return secretKey(path, m)
+	case []any:
+		for i, e := range v {
+			if s := secretKey(fmt.Sprintf("%s[%d]", path, i), e); s != "" {
+				return s
 			}
 		}
 	}
-	return nil
+	return ""
+}
+
+func sortedKeys(m map[string]any) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }

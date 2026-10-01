@@ -41,9 +41,9 @@ const usageTemplate = `{{agentNote .}}{{heading "Usage"}}{{if .Runnable}}
 `
 
 func setHelp(root *cobra.Command, f *core.Factory) {
-	cs := f.IO.Color()
-	cobra.AddTemplateFunc("heading", cs.Bold)
-	cobra.AddTemplateFunc("dim", cs.Dim)
+	// Read the color state when help is rendered, after --no-color is applied.
+	cobra.AddTemplateFunc("heading", func(s string) string { return f.IO.Color().Bold(s) })
+	cobra.AddTemplateFunc("dim", func(s string) string { return f.IO.Color().Dim(s) })
 	cobra.AddTemplateFunc("hasGroup", func(cmds []*cobra.Command, id string) bool {
 		for _, c := range cmds {
 			if c.GroupID == id && c.IsAvailableCommand() {
