@@ -289,7 +289,7 @@ func NewCmdLogout(f *core.Factory) *cobra.Command {
 		Use:   "logout [account]",
 		Short: "Sign out and remove an account's credentials",
 		Example: `  $ reearth logout
-  $ reearth logout work
+  $ reearth logout work --yes
   $ reearth logout --all`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -320,10 +320,12 @@ func NewCmdLogout(f *core.Factory) *cobra.Command {
 					return cmdutil.NotFoundf("account %q not found", n)
 				}
 			}
+			question := fmt.Sprintf("Log out of %s?", names[0])
 			if all {
-				if err := f.Confirm(fmt.Sprintf("Log out of all %d accounts?", len(names))); err != nil {
-					return err
-				}
+				question = fmt.Sprintf("Log out of all %d accounts?", len(names))
+			}
+			if err := f.Confirm(question); err != nil {
+				return err
 			}
 
 			prevActive := cfg.Active
@@ -381,7 +383,7 @@ func NewCmdUse(f *core.Factory) *cobra.Command {
 				name = args[0]
 			} else {
 				if !f.IO.CanPrompt() {
-					return cmdutil.NoInputError("account name", "an account name")
+					return cmdutil.NoInputError("account name", fmt.Sprintf("the account name: `%s use <account>`", f.AppName))
 				}
 				labels := make([]string, len(names))
 				def := 0

@@ -2,6 +2,8 @@ package corecmd
 
 import (
 	"fmt"
+	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -25,7 +27,12 @@ type accountJSON struct {
 
 func accountView(name string, acc *config.Account, active bool) accountJSON {
 	storage := "keyring"
-	if acc.InsecureStorage {
+	switch {
+	case name == "":
+		// The REEARTH_TOKEN account is the only one without a name; its
+		// token lives in the environment.
+		storage = "env"
+	case acc.InsecureStorage:
 		storage = "file"
 	}
 	return accountJSON{
@@ -38,7 +45,7 @@ func NewCmdAccount(f *core.Factory) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "account",
 		Aliases: []string{"accounts"},
-		Short:   "Manage accounts",
+		Short:   "List, inspect and rename signed-in accounts",
 		Long: fmt.Sprintf(`Manage the accounts stored by "%[1]s login".
 
 Each command chooses its account in this order:
@@ -140,7 +147,11 @@ func newCmdAccountCurrent(f *core.Factory, use string) *cobra.Command {
 	return &cobra.Command{
 		Use:   use,
 		Short: "Show the account used by commands here, and why",
-		Args:  cobra.NoArgs,
+		Long: `Show the account used by commands here, and why it was selected.
+
+REEARTH_<PRODUCT>_TOKEN overrides the account for that product; the variables
+that are set are listed as well.`,
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			r, err := f.Account()
 			if err != nil {
@@ -150,15 +161,22 @@ func newCmdAccountCurrent(f *core.Factory, use string) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			var overrides []string
+			for _, pr := range f.Products {
+				if k := core.ProductEnv(pr, "TOKEN"); os.Getenv(k) != "" {
+					overrides = append(overrides, k)
+				}
+			}
 			v := struct {
 				accountJSON
-				Source string `json:"source"`
-			}{accountView(r.Name, r.Account, true), r.Source}
+				Source         string   `json:"source"`
+				TokenOverrides []string `json:"token_overrides,omitempty"`
+			}{accountView(r.Name, r.Account, true), r.Source, overrides}
 			return p.Print(v, func() error {
 				cs := f.IO.Color()
 				w := f.IO.Out
 				if !p.IsHuman() {
-					_, err := fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", r.DisplayName(), userLabel(r.Account.User), r.Account.Env, r.Source)
+					_, err := fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", r.DisplayName(), userLabel(r.Account.User), r.Account.Env, r.Source, strings.Join(overrides, ","))
 					return err
 				}
 				line := "  " + cs.ActiveMark(true) + " " + cs.Bold(r.DisplayName())
@@ -167,6 +185,9 @@ func newCmdAccountCurrent(f *core.Factory, use string) *cobra.Command {
 				}
 				_, _ = fmt.Fprintln(w, line)
 				_, err := fmt.Fprintln(w, "    "+cs.Dim(fmt.Sprintf("%s · %s · selected by %s", r.Account.Env, r.Account.Kind, sourceLabel(r, f))))
+				if err == nil && len(overrides) > 0 {
+					_, err = fmt.Fprintln(w, "    "+cs.Dim(strings.Join(overrides, ", ")+" overrides this account for its product"))
+				}
 				return err
 			})
 		},

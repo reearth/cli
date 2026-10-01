@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/reearth/cli/sdk/build"
 	"github.com/reearth/cli/sdk/cmdutil"
 	"github.com/reearth/cli/sdk/config"
 	"github.com/reearth/cli/sdk/credstore"
@@ -147,13 +148,19 @@ func TestLoopbackLoginUsesPKCE(t *testing.T) {
 	}
 }
 
-func TestLoopbackRejectsStateMismatch(t *testing.T) {
+func TestLoopbackIgnoresStateMismatch(t *testing.T) {
 	fa := newFakeAuth0(t)
 	ios, _, _, _ := iostreams.Test()
 	open := func(authURL string) error {
 		u, _ := url.Parse(authURL)
+		cb := u.Query().Get("redirect_uri")
 		go func() {
-			resp, err := http.Get(u.Query().Get("redirect_uri") + "?code=x&state=forged")
+			// A forged callback must neither end the login nor reach the terminal.
+			resp, err := http.Get(cb + "?error=x&error_description=forged&state=forged")
+			if err == nil {
+				_ = resp.Body.Close()
+			}
+			resp, err = http.Get(cb + "?error=access_denied&error_description=" + url.QueryEscape("\x1b[2Jdenied") + "&state=" + url.QueryEscape(u.Query().Get("state")))
 			if err == nil {
 				_ = resp.Body.Close()
 			}
@@ -161,8 +168,44 @@ func TestLoopbackRejectsStateMismatch(t *testing.T) {
 		return nil
 	}
 	_, err := Login(context.Background(), LoginOptions{Env: fa.env(), Flow: FlowLoopback, IO: ios, OpenBrowser: open, Timeout: 10 * time.Second})
-	if err == nil || !strings.Contains(err.Error(), "state mismatch") {
-		t.Fatalf("err = %v", err)
+	if err == nil || !strings.Contains(err.Error(), "access_denied") || strings.Contains(err.Error(), "forged") || strings.Contains(err.Error(), "\x1b") {
+		t.Fatalf("err = %q", err)
+	}
+}
+
+func TestAuthEnvOverridesOnlyInDevBuilds(t *testing.T) {
+	cfg, _ := config.LoadFile(t.TempDir() + "/c.yaml")
+	cfg.Envs["onprem"] = &config.EnvConfig{Auth: config.EnvAuth{Domain: "auth.example.com", ClientID: "c"}}
+	t.Setenv("REEARTH_AUTH_DOMAIN", "https://evil.example")
+	env, err := ResolveEnv(cfg, "onprem")
+	if err != nil || env.Domain != "https://evil.example" {
+		t.Fatalf("dev build: %+v (%v)", env, err)
+	}
+	orig := build.Version
+	t.Cleanup(func() { build.Version = orig })
+	build.Version = "1.2.3"
+	env, err = ResolveEnv(cfg, "onprem")
+	if err != nil || env.Domain != "https://auth.example.com" {
+		t.Fatalf("release build: %+v (%v)", env, err)
+	}
+}
+
+type failingStore struct{ credstore.Store }
+
+func (failingStore) Set(string, *credstore.Secret) error { return errors.New("disk full") }
+
+func TestSourceSaveFailureAfterRotation(t *testing.T) {
+	fa := newFakeAuth0(t)
+	fa.refresh["rt-initial"] = true
+	m, _ := newTestManager(t, fa)
+	_ = m.Keyring.Set("work", &credstore.Secret{Kind: config.KindOAuth, RefreshToken: "rt-initial"})
+	m.Keyring = failingStore{m.Keyring}
+	r, _ := m.Resolve("", nil)
+	ts, _ := m.TokenSource(r)
+	_, err := ts.Token()
+	var e *cmdutil.Error
+	if !errors.As(err, &e) || e.Code != "auth.save_failed" || e.Exit != cmdutil.ExitAuth || !strings.Contains(e.Message, "rotated") {
+		t.Fatalf("err = %#v", err)
 	}
 }
 

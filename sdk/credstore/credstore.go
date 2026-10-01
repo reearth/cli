@@ -4,6 +4,7 @@
 package credstore
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -13,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/gofrs/flock"
 	"github.com/zalando/go-keyring"
 )
 
@@ -42,6 +44,9 @@ type Store interface {
 	Delete(account string) error
 }
 
+// keyringSet is replaced in tests.
+var keyringSet = keyring.Set
+
 // Keyring returns the OS keyring store.
 func Keyring() Store { return keyringStore{} }
 
@@ -67,10 +72,11 @@ func (keyringStore) Set(account string, s *Secret) error {
 	if err != nil {
 		return err
 	}
-	err = keyring.Set(Service, account, string(b))
+	err = keyringSet(Service, account, string(b))
 	if errors.Is(err, keyring.ErrSetDataTooBig) && len(s.AccessTokens) > 0 {
-		// Windows Credential Manager caps entries at 2560 bytes. The access
-		// token cache is optional, so drop it rather than fail.
+		// Keyrings cap the entry size (Windows Credential Manager at 2560
+		// bytes; on macOS the security command line at 4096 bytes). The
+		// access token cache is optional, so drop it rather than fail.
 		cp := *s
 		cp.AccessTokens = nil
 		return keyringStore{}.Set(account, &cp)
@@ -119,6 +125,34 @@ type fileStore struct {
 	mu   sync.Mutex
 }
 
+// update runs a read-modify-write of the file under a cross-process lock, so
+// that processes writing different accounts do not lose each other's updates.
+// fn reports whether the map changed.
+func (f *fileStore) update(fn func(m map[string]*Secret) bool) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if err := os.MkdirAll(filepath.Dir(f.path), 0o700); err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	lock := flock.New(f.path + ".lock")
+	if ok, err := lock.TryLockContext(ctx, 50*time.Millisecond); err != nil {
+		return fmt.Errorf("could not lock %s: %w", f.path, err)
+	} else if !ok {
+		return fmt.Errorf("could not lock %s", f.path)
+	}
+	defer func() { _ = lock.Unlock() }()
+	m, err := f.load()
+	if err != nil {
+		return err
+	}
+	if !fn(m) {
+		return nil
+	}
+	return f.save(m)
+}
+
 func (f *fileStore) load() (map[string]*Secret, error) {
 	m := map[string]*Secret{}
 	b, err := os.ReadFile(f.path)
@@ -135,21 +169,26 @@ func (f *fileStore) load() (map[string]*Secret, error) {
 }
 
 func (f *fileStore) save(m map[string]*Secret) error {
-	if err := os.MkdirAll(filepath.Dir(f.path), 0o700); err != nil {
-		return err
-	}
 	b, err := json.MarshalIndent(m, "", "  ")
 	if err != nil {
 		return err
 	}
-	tmp := f.path + ".tmp"
-	if err := os.WriteFile(tmp, b, 0o600); err != nil {
+	tmp, err := os.CreateTemp(filepath.Dir(f.path), filepath.Base(f.path)+".*.tmp")
+	if err != nil {
 		return err
 	}
+	defer func() { _ = os.Remove(tmp.Name()) }()
 	if runtime.GOOS != "windows" {
-		_ = os.Chmod(tmp, 0o600)
+		_ = tmp.Chmod(0o600)
 	}
-	return os.Rename(tmp, f.path)
+	if _, err := tmp.Write(b); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmp.Name(), f.path)
 }
 
 func (f *fileStore) Get(account string) (*Secret, error) {
@@ -167,28 +206,20 @@ func (f *fileStore) Get(account string) (*Secret, error) {
 }
 
 func (f *fileStore) Set(account string, s *Secret) error {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	m, err := f.load()
-	if err != nil {
-		return err
-	}
-	m[account] = s
-	return f.save(m)
+	return f.update(func(m map[string]*Secret) bool {
+		m[account] = s
+		return true
+	})
 }
 
 func (f *fileStore) Delete(account string) error {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	m, err := f.load()
-	if err != nil {
-		return err
-	}
-	if _, ok := m[account]; !ok {
-		return nil
-	}
-	delete(m, account)
-	return f.save(m)
+	return f.update(func(m map[string]*Secret) bool {
+		if _, ok := m[account]; !ok {
+			return false
+		}
+		delete(m, account)
+		return true
+	})
 }
 
 // Memory returns an in-memory store for tests.

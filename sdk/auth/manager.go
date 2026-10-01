@@ -251,13 +251,17 @@ func (s *Source) Token() (*oauth2.Token, error) {
 	return tok, nil
 }
 
-// Invalidate forces the next Token call to refresh (used after a 401).
-func (s *Source) Invalidate() {
+// Invalidate forces the next Token call to refresh (used after a 401, and to
+// verify a session with the server). It reports false for static tokens,
+// which cannot be refreshed.
+func (s *Source) Invalidate() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if !s.static {
-		s.cur, s.force = nil, true
+	if s.static {
+		return false
 	}
+	s.cur, s.force = nil, true
+	return true
 }
 
 // refresh obtains a new access token. A file lock serializes refreshes across
@@ -311,10 +315,22 @@ func (s *Source) refresh() (*oauth2.Token, error) {
 	if tok.RefreshToken == "" {
 		tok.RefreshToken = sec.RefreshToken
 	}
+	rotated := tok.RefreshToken != sec.RefreshToken
 	sec.RefreshToken = tok.RefreshToken
 	sec.AccessTokens = map[string]credstore.AccessToken{aud: {Token: tok.AccessToken, Expiry: tok.Expiry}}
 	if err := s.store.Set(s.name, sec); err != nil {
-		return nil, fmt.Errorf("save refreshed credentials: %w", err)
+		if !rotated {
+			return nil, fmt.Errorf("save refreshed credentials: %w", err)
+		}
+		// The server already invalidated the stored refresh token.
+		return nil, &cmdutil.Error{
+			Exit: cmdutil.ExitAuth,
+			Code: "auth.save_failed",
+			Message: fmt.Sprintf("could not store the refreshed credentials of account %q: %v; "+
+				"the server has already rotated the refresh token, so the session is lost", s.name, err),
+			Hint: fmt.Sprintf("run `%s login %s`", s.m.AppName, s.name),
+			Err:  err,
+		}
 	}
 	return tok, nil
 }

@@ -9,7 +9,9 @@ import (
 	"html"
 	"net"
 	"net/http"
+	"strings"
 	"time"
+	"unicode"
 
 	"golang.org/x/oauth2"
 
@@ -99,12 +101,15 @@ func loopbackLogin(ctx context.Context, o LoginOptions) (*oauth2.Token, error) {
 				return
 			}
 			q := r.URL.Query()
+			if q.Get("state") != state {
+				// Not a response to our request: ignore it and keep waiting.
+				writeCallbackPage(w, errors.New("state mismatch"))
+				return
+			}
 			var res callbackResult
 			switch {
 			case q.Get("error") != "":
-				res.err = fmt.Errorf("authorization failed: %s %s", q.Get("error"), q.Get("error_description"))
-			case q.Get("state") != state:
-				res.err = errors.New("authorization failed: state mismatch")
+				res.err = fmt.Errorf("authorization failed: %s %s", printable(q.Get("error")), printable(q.Get("error_description")))
 			case q.Get("code") == "":
 				res.err = errors.New("authorization failed: no code in callback")
 			default:
@@ -166,6 +171,17 @@ func deviceLogin(ctx context.Context, o LoginOptions) (*oauth2.Token, error) {
 	o.IO.StartProgress("Waiting for authorization…")
 	defer o.IO.StopProgress()
 	return conf.DeviceAccessToken(ctx, da)
+}
+
+// printable drops control characters (such as terminal escape sequences)
+// from server-provided text.
+func printable(s string) string {
+	return strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) {
+			return -1
+		}
+		return r
+	}, s)
 }
 
 func randomString() string {

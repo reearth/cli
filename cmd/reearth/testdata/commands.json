@@ -140,7 +140,7 @@
   {
     "path": "reearth account",
     "usage": "reearth account [flags]",
-    "short": "Manage accounts",
+    "short": "List, inspect and rename signed-in accounts",
     "aliases": [
       "accounts"
     ],
@@ -360,7 +360,7 @@
   {
     "path": "reearth doctor",
     "usage": "reearth doctor [flags]",
-    "short": "Diagnose configuration, credentials, network and installation",
+    "short": "Diagnose configuration, credentials and network",
     "runnable": true
   },
   {

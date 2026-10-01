@@ -10,6 +10,7 @@ import (
 
 	"golang.org/x/oauth2"
 
+	"github.com/reearth/cli/sdk/build"
 	"github.com/reearth/cli/sdk/cmdutil"
 	"github.com/reearth/cli/sdk/config"
 )
@@ -66,8 +67,9 @@ func EnvNames(cfg *config.Config) []string {
 }
 
 // ResolveEnv returns the environment by name. User-defined envs in the config
-// override built-ins; REEARTH_AUTH_DOMAIN / REEARTH_AUTH_CLIENT_ID /
-// REEARTH_AUTH_AUDIENCE override any env (useful for development builds).
+// override built-ins. In development builds, REEARTH_AUTH_DOMAIN /
+// REEARTH_AUTH_CLIENT_ID / REEARTH_AUTH_AUDIENCE override any env; release
+// builds ignore them.
 func ResolveEnv(cfg *config.Config, name string) (*Env, error) {
 	if name == "" {
 		name = EnvProd
@@ -85,19 +87,25 @@ func ResolveEnv(cfg *config.Config, name string) (*Env, error) {
 			fmt.Sprintf("unknown environment %q", name),
 			"known environments: "+strings.Join(EnvNames(cfg), ", "))
 	}
-	if v := os.Getenv("REEARTH_AUTH_DOMAIN"); v != "" {
-		env.Domain = v
-	}
-	if v := os.Getenv("REEARTH_AUTH_CLIENT_ID"); v != "" {
-		env.ClientID = v
-	}
-	if v := os.Getenv("REEARTH_AUTH_AUDIENCE"); v != "" {
-		env.Audience = v
+	dev := build.IsDev()
+	if dev {
+		if v := os.Getenv("REEARTH_AUTH_DOMAIN"); v != "" {
+			env.Domain = v
+		}
+		if v := os.Getenv("REEARTH_AUTH_CLIENT_ID"); v != "" {
+			env.ClientID = v
+		}
+		if v := os.Getenv("REEARTH_AUTH_AUDIENCE"); v != "" {
+			env.Audience = v
+		}
 	}
 	if env.Domain == "" || env.ClientID == "" {
+		hint := "define envs." + name + " in " + config.Path()
+		if dev {
+			hint = "set REEARTH_AUTH_DOMAIN and REEARTH_AUTH_CLIENT_ID, or " + hint
+		}
 		return nil, cmdutil.NewError(cmdutil.ExitError, "env.not_configured",
-			fmt.Sprintf("environment %q is not configured in this build", name),
-			"set REEARTH_AUTH_DOMAIN and REEARTH_AUTH_CLIENT_ID, or define envs."+name+" in "+config.Path())
+			fmt.Sprintf("environment %q is not configured in this build", name), hint)
 	}
 	env.Domain = normalizeDomain(env.Domain)
 	return env, nil

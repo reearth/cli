@@ -20,10 +20,16 @@ import (
 func NewCmdDoctor(f *core.Factory) *cobra.Command {
 	return &cobra.Command{
 		Use:   "doctor",
-		Short: "Diagnose configuration, credentials, network and installation",
-		Args:  cobra.NoArgs,
+		Short: "Diagnose configuration, credentials and network",
+		Long: `Check the config file, the project file, the OS keyring, the connection
+to the auth server and every stored account. The host binary may add checks;
+reearth also checks its installation and version.`,
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
+			// The config check reports a broken file, so load it before the
+			// Printer would warn that it is ignored.
+			_, _ = f.Config()
 			p, err := f.Printer()
 			if err != nil {
 				return err
@@ -67,7 +73,8 @@ func NewCmdDoctor(f *core.Factory) *cobra.Command {
 				return err
 			}
 			if failed > 0 {
-				return cmdutil.SilentExit(cmdutil.ExitError, "doctor.failed")
+				return cmdutil.NewError(cmdutil.ExitError, "doctor.failed",
+					fmt.Sprintf("%d of %d checks failed", failed, len(checks)), "")
 			}
 			return nil
 		},
@@ -119,6 +126,8 @@ func runChecks(ctx context.Context, f *core.Factory) []core.Check {
 		name := "account " + n
 		ts, err := m.TokenSource(r)
 		if err == nil {
+			// Refresh so that a revoked session fails even with a cached token.
+			ts.Invalidate()
 			_, err = ts.Token()
 		}
 		if err != nil {

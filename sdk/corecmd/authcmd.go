@@ -2,6 +2,7 @@ package corecmd
 
 import (
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -33,7 +34,8 @@ func newCmdAuthStatus(f *core.Factory) *cobra.Command {
 	return &cobra.Command{
 		Use:   "status",
 		Short: "Check that each account's credentials work",
-		Long: `Check each account by refreshing its access token.
+		Long: `Check each account by refreshing its access token with the server, so
+that a revoked session is reported even while a cached token has not expired.
 
 Pass --account to check one account only. The command exits with code 4
 when any checked account needs to log in again.`,
@@ -78,6 +80,7 @@ when any checked account needs to log in again.`,
 				}
 				ts, err := m.TokenSource(r)
 				if err == nil {
+					ts.Invalidate()
 					var tokExp time.Time
 					if tok, terr := ts.Token(); terr != nil {
 						err = terr
@@ -104,7 +107,8 @@ when any checked account needs to log in again.`,
 				return err
 			}
 			if failed > 0 {
-				return cmdutil.SilentExit(cmdutil.ExitAuth, "auth.invalid")
+				return cmdutil.NewError(cmdutil.ExitAuth, "auth.invalid",
+					fmt.Sprintf("%d of %d accounts failed", failed, len(results)), "")
 			}
 			return nil
 		},
@@ -150,9 +154,15 @@ func newCmdAuthToken(f *core.Factory) *cobra.Command {
 		Long: `Print a valid access token for the current account to stdout.
 
 Use this only to hand a token to a tool that cannot call the CLI itself.
-It is refused when a coding agent is detected. Set REEARTH_AGENT=0 to override.`,
+It is refused when a coding agent is detected. Set REEARTH_AGENT=0 to override.
+It is refused when called from an extension (REEARTH_EXTENSION is set).`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if os.Getenv("REEARTH_EXTENSION") != "" {
+				return cmdutil.NewError(cmdutil.ExitError, "auth.token_refused_extension",
+					"refusing to print an access token to an extension",
+					"let the CLI make authenticated requests (e.g. `"+f.AppName+" api`)")
+			}
 			if f.IO.Agent != "" {
 				return cmdutil.NewError(cmdutil.ExitError, "auth.token_refused",
 					"refusing to print an access token to a coding agent ("+f.IO.Agent+")",

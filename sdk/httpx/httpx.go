@@ -3,9 +3,11 @@
 package httpx
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -16,7 +18,9 @@ import (
 // TokenSource is an oauth2.TokenSource that can be told its token was rejected.
 type TokenSource interface {
 	oauth2.TokenSource
-	Invalidate()
+	// Invalidate discards the current token and reports whether the next
+	// Token call can return a different one (false for static tokens).
+	Invalidate() bool
 }
 
 type Options struct {
@@ -50,7 +54,24 @@ func NewClient(o Options) *http.Client {
 	if o.UserAgent != "" {
 		rt = &uaTransport{next: rt, ua: o.UserAgent}
 	}
-	return &http.Client{Transport: rt, Timeout: 5 * time.Minute}
+	c := &http.Client{Transport: rt, Timeout: 5 * time.Minute}
+	if o.TokenSource != nil {
+		c.CheckRedirect = sameOriginRedirect
+	}
+	return c
+}
+
+// sameOriginRedirect refuses redirects to another origin. The auth transport
+// sets the token on every hop, so following one would leak the token.
+func sameOriginRedirect(req *http.Request, via []*http.Request) error {
+	if len(via) >= 10 {
+		return errors.New("stopped after 10 redirects")
+	}
+	orig := via[0].URL
+	if req.URL.Scheme != orig.Scheme || !strings.EqualFold(req.URL.Host, orig.Host) {
+		return fmt.Errorf("refusing to follow a redirect to %s://%s: credentials are only sent to %s://%s", req.URL.Scheme, req.URL.Host, orig.Scheme, orig.Host)
+	}
+	return nil
 }
 
 type uaTransport struct {
@@ -67,11 +88,17 @@ func (t *uaTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 }
 
 // authTransport sets the bearer token and, on 401, refreshes once and retries
-// if the request body can be replayed.
+// if the token source can refresh and the request body can be replayed.
 type authTransport struct {
 	next http.RoundTripper
 	ts   TokenSource
 }
+
+// tokenError is a failure to obtain a token. It is never retried.
+type tokenError struct{ err error }
+
+func (e *tokenError) Error() string { return e.err.Error() }
+func (e *tokenError) Unwrap() error { return e.err }
 
 func (t *authTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	resp, err := t.do(req)
@@ -81,8 +108,10 @@ func (t *authTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	if req.Body != nil && req.GetBody == nil {
 		return resp, nil
 	}
+	if !t.ts.Invalidate() {
+		return resp, nil
+	}
 	_ = resp.Body.Close()
-	t.ts.Invalidate()
 	retry := req.Clone(req.Context())
 	if req.GetBody != nil {
 		if retry.Body, err = req.GetBody(); err != nil {
@@ -95,7 +124,7 @@ func (t *authTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 func (t *authTransport) do(req *http.Request) (*http.Response, error) {
 	tok, err := t.ts.Token()
 	if err != nil {
-		return nil, err
+		return nil, &tokenError{err}
 	}
 	r := req.Clone(req.Context())
 	tok.SetAuthHeader(r)
@@ -118,7 +147,8 @@ func idempotent(method string) bool {
 func (t *retryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	for attempt := 0; ; attempt++ {
 		resp, err := t.next.RoundTrip(req)
-		if attempt >= t.max || !idempotent(req.Method) || (req.Body != nil && req.GetBody == nil) {
+		var te *tokenError
+		if attempt >= t.max || !idempotent(req.Method) || (req.Body != nil && req.GetBody == nil) || errors.As(err, &te) {
 			return resp, err
 		}
 		if err == nil && resp.StatusCode != http.StatusTooManyRequests && resp.StatusCode < 500 {
@@ -153,14 +183,40 @@ type debugTransport struct {
 	w    io.Writer
 }
 
-var sensitiveHeaders = map[string]bool{"Authorization": true, "Cookie": true, "Set-Cookie": true, "X-Api-Key": true}
+// sensitive reports whether a header or query parameter name looks like it carries a secret.
+func sensitive(name string) bool {
+	name = strings.ToLower(name)
+	for _, s := range []string{"token", "secret", "key", "auth", "password", "cookie"} {
+		if strings.Contains(name, s) {
+			return true
+		}
+	}
+	return false
+}
+
+func redactURL(u *url.URL) string {
+	q := u.Query()
+	masked := false
+	for k := range q {
+		if sensitive(k) {
+			q[k] = []string{"****"}
+			masked = true
+		}
+	}
+	if masked {
+		cp := *u
+		cp.RawQuery = q.Encode()
+		u = &cp
+	}
+	return u.Redacted()
+}
 
 func (t *debugTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	start := time.Now()
-	_, _ = fmt.Fprintf(t.w, "> %s %s\n", req.Method, req.URL.Redacted())
+	_, _ = fmt.Fprintf(t.w, "> %s %s\n", req.Method, redactURL(req.URL))
 	for k, vs := range req.Header {
 		for _, v := range vs {
-			if sensitiveHeaders[k] {
+			if sensitive(k) {
 				v = maskValue(v)
 			}
 			_, _ = fmt.Fprintf(t.w, "> %s: %s\n", k, v)
@@ -174,7 +230,7 @@ func (t *debugTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	_, _ = fmt.Fprintf(t.w, "< %s (%s)\n", resp.Status, time.Since(start).Round(time.Millisecond))
 	for k, vs := range resp.Header {
 		for _, v := range vs {
-			if sensitiveHeaders[k] {
+			if sensitive(k) {
 				v = maskValue(v)
 			}
 			_, _ = fmt.Fprintf(t.w, "< %s: %s\n", k, v)
