@@ -10,8 +10,8 @@ The CLI takes its cues from `gh`, `gcloud`, `stripe`, `wrangler`, `docker` and `
 2. **Humans and programs get the same data.** On a TTY, output is a styled table. Otherwise it is plain tab-separated rows. `--json`, `--jq` and `-o` produce structured output in every environment. A command builds its data once, and the SDK decides how to render it.
 3. **Coding agents are first-class users.** The CLI detects agents (Claude Code, Cursor, Codex, ...) and CI. In those environments it never prompts, shows no spinners or update notices, and every failure carries a stable error code and exit code.
 4. **Products are plugins on a shared SDK.** Authentication, accounts, output, configuration and HTTP live in `sdk/`. A product only describes its commands.
-5. **Products never see credentials.** A product asks for an authenticated `*http.Client`. It never handles token strings, so tokens cannot leak through product code.
-6. **Built-in commands cannot be shadowed.** Extensions run outside the trust boundary. They cannot take the name of a built-in command and do not receive credentials.
+5. **Products never see credentials.** A product is given only an authenticated `*http.Client` (`f.HTTPClient`). The SDK hands products no token strings, so product code has no tokens to leak. `f.Auth` returns them and is for core commands only; products must not call it.
+6. **Built-in commands cannot be shadowed.** Extensions cannot take the name of a built-in command. They are not sandboxed: an extension runs with the user's own access, like any program the user runs. The CLI does not hand them the credentials it stores, but that is not a security boundary. Users are protected by installing only extensions they trust.
 7. **The binary documents itself.** `search`, `--help` and help topics are built from the command tree, so they always match the installed version.
 8. **Agents search; they do not crawl.** `reearth search "<task>"` ranks every command offline. Walking `--help` level by level costs an agent one call per level, so the help of a command group tells agents to search instead.
 
@@ -36,7 +36,7 @@ internal/            features of the distributed binary only: self-update, exten
 docs/                GitHub Pages (install.sh, served at cli.reearth.io)
 ```
 
-Dependencies point one way only: `cmd` → `products` → `sdk`. `sdk` never imports `products` or `internal`, and products never import each other. golangci-lint (depguard) enforces this.
+Dependencies point one way only: `cmd` → `products` → `sdk`. `sdk` never imports `products` or `internal`, and products never import each other. golangci-lint (depguard) enforces this. A product that splits into subpackages needs a depguard rule of its own; see `.golangci.yml`.
 
 ### One product, two binaries
 
@@ -45,7 +45,7 @@ Every product runs both as `reearth <product>` and as a standalone `reearth-<pro
 - `app.Run` mounts several products under `reearth`.
 - `app.Main` makes a single product the root command and adds the shared commands (`login`, `account`, `skills`, ...).
 
-Both binaries share the same config and keyring, so a login in one works in the other. Only `reearth` is distributed. Invoking it through a symlink named `reearth-<product>` gives the standalone experience (busybox-style dispatch).
+Both binaries share the same config and keyring, so a login in one works in the other. Only `reearth` is distributed. Invoking it through a symlink named `reearth-<product>` runs it exactly like the standalone binary (busybox-style dispatch). Commands of the distributed binary only, such as `upgrade` and `extension`, are not available there.
 
 All product CLIs live in this repository, in one Go module. Each product's API client comes from that product's own Go SDK, such as `github.com/reearth/reearth-cms-api/go`.
 
@@ -63,18 +63,20 @@ Auth0 settings for the CLI application:
 - Callback URL: `http://127.0.0.1/callback` (Auth0 accepts any port for loopback addresses)
 - Grants: Authorization Code, Device Code and Refresh Token, with refresh token rotation enabled
 
-The client ID of a public client is not a secret. It is still injected at build time (`-ldflags -X`) from repository secrets, so that the values for each environment are kept in one place. Development builds read `REEARTH_AUTH_DOMAIN`, `REEARTH_AUTH_CLIENT_ID` and `REEARTH_AUTH_AUDIENCE` instead. Users can define other environments, such as on-premises installations, under `envs:` in the config file.
+The client ID of a public client is not a secret. It is still injected at build time (`-ldflags -X`) from repository secrets, so that the values for each environment are kept in one place. In development builds (see [Development](#development)), `REEARTH_AUTH_DOMAIN`, `REEARTH_AUTH_CLIENT_ID` and `REEARTH_AUTH_AUDIENCE` override these values for every environment. Release builds ignore these variables. Users can define other environments, such as on-premises installations, under `envs:` in the config file.
 
 ### Storing credentials
 
 - Secrets live only in the OS keyring. Stored values are the refresh token (or the static token of a token account) and a best-effort cache of access tokens.
 - `config.yaml` contains no secrets, and `.reearth.yaml` refuses keys that look like secrets, so that project files are safe to commit.
-- A plain file is used instead of the keyring only when the user opts in with `--insecure-storage`.
-- Windows Credential Manager caps an entry at 2560 bytes. When an entry would exceed the cap, the access token cache is dropped and the refresh token is kept.
+- A plain file is used instead of the keyring only when the user opts in with `--insecure-storage`. Writes to it run under a file lock and replace the file atomically, so that processes writing different accounts do not lose each other's updates.
+- Keyrings cap the size of an entry: Windows Credential Manager at 2560 bytes, and the macOS `security` command line at 4096 bytes. When an entry would exceed the cap, the access token cache is dropped and the refresh token is kept.
 
 ### Refreshing tokens
 
-Tokens are refreshed transparently inside the HTTP transport. Auth0 rotates refresh tokens, so two processes refreshing at the same time would invalidate each other's tokens. Refreshes therefore run under a per-account file lock, and the stored credentials are read again once the lock is held. When a request gets a 401 response, the transport refreshes the token and retries the request once. When a refresh fails with `invalid_grant`, the command exits with code 4 and tells the user to log in again.
+Tokens are refreshed transparently inside the HTTP transport. Auth0 rotates refresh tokens, so two processes refreshing at the same time would invalidate each other's tokens. Refreshes therefore run under a per-account file lock, and the stored credentials are read again once the lock is held. When a request gets a 401 response, the transport refreshes the token and retries the request once. A static token cannot be refreshed, so its 401 response is returned as is. A failed refresh is never retried. When a refresh fails with `invalid_grant`, the command exits with code 4 and tells the user to log in again. If the rotated refresh token cannot be stored, the session is lost, because the server has already invalidated the old one; the command exits with code 4 (`auth.save_failed`). `auth status` and `doctor` force a refresh, so that a session revoked on the server is reported even while a cached access token is still valid.
+
+An authenticated client refuses redirects to another scheme or host, because the transport would attach the token to the redirected request.
 
 ### Selecting the account
 
@@ -91,7 +93,7 @@ The CMS integration API does not yet accept user JWTs (it has no JWT middleware)
 - Commands call `f.Printer()` and pass their data to `p.Print(data, human)`. The data is what `--json` emits. `human` renders the table or plain output and is not called in machine formats. Field selection (`--json=a,b`), `--jq`, YAML and NDJSON are handled by the SDK.
 - Treat JSON field names as a public API. Once a field ships, do not rename it.
 - Times are relative on a TTY ("2 hours ago") and RFC 3339 elsewhere (`p.Time`). Long IDs are shortened on a TTY only (`p.ShortID`).
-- Errors are `*cmdutil.Error` values with a stable `code`, a `message` and an optional `hint`. Their exit codes are 1 (general error), 2 (invalid usage), 4 (authentication), 5 (not found) and 8 (cancelled). With `--json`, errors are printed to stderr as JSON.
+- Errors are `*cmdutil.Error` values with a stable `code`, a `message` and an optional `hint`. Their exit codes are 1 (general error), 2 (invalid usage), 4 (authentication), 5 (not found) and 8 (cancelled). With `--json`, `--jq` or `-o json|ndjson`, errors are printed to stderr as JSON, even when the flags themselves fail to parse.
 - Only prompt when `f.IO.CanPrompt()` is true. Otherwise fail with an error that names the flag to pass. Destructive actions go through `f.Confirm`, which honors `--yes`.
 
 ## Look and feel
@@ -113,16 +115,18 @@ Agents learn the CLI from the CLI itself. There are no separate docs to keep in 
 - A command's `Long` carries what an agent needs beyond the flags: concepts, the order in which values are resolved, and what to do when the command fails. `search` matches it too, and the `Long` of a group leads to the group's commands.
 - Knowledge that belongs to no single command is a help topic (`reearth help exit-codes`): a text file in `sdk/corecmd/topics/` registered in `topics.go`. Write `{{app}}` for the binary name.
 - Knowledge about the products themselves, such as what a reference field is, lives at docs.reearth.io. `reearth docs search` and `docs read` read it through the site's `llms-full.txt` (`sdk/docs`), so do not copy it into `Long`; link the page instead.
-- `SKILL.md` (`sdk/skills/SKILL.md.tmpl`) holds only what outlives a release: how to find commands, and the rules for output, prompts, login and `--yes`. It names no flags, so an old installed copy never teaches outdated ones.
+- `reearth docs read` takes an id or a title. Ids are page URL paths when the site publishes page URLs, and titles otherwise; then pages that share a title get numbered ids (`概要 (1)`, `概要 (2)`), so every id names one page. A title that several pages share is ambiguous and exits with 2, listing the ids. The numbers follow the order of `llms-full.txt`, so they can change when pages are added; page URLs work once the site publishes them.
+- `SKILL.md` (`sdk/skills/SKILL.md.tmpl`) holds only what outlives a release: how to find commands, and the rules for output, prompts, login and `--yes`. It names no product or command flags, only global ones that are part of the CLI's stable contract (`--json`, `--jq`, `--yes`, `--help`), so an old installed copy never teaches outdated ones. The help topics it names are checked against `topics.go` by a test.
 
 ## Command descriptions and the command surface
 
 `search`, `--help` and the help topics all read the same descriptions, so they are held to a few rules. `cmdtree.Lint` checks them in `cmd/reearth/main_test.go`:
 
-- Every visible command has a `Short` of two words or more that says what the command does. A summary that repeats the name, such as `dns` or `Operations for records`, cannot be found by describing a task.
+- Every visible command has a `Short` of two words or more that says what the command does. A summary that repeats the name, such as `dns` or `Operations for records`, cannot be found by describing a task. Without generic words (`manage`, `operations`, `commands`, `work with`, `for`, `the`, ...), a `Short` must say more than the command's name or its parent's name: `Manage accounts` on `account` fails, `List accounts` on `account list` passes.
 - `Short` and flag usages are one line, start with a capital letter and have no trailing period. Put details in `Long`; it is searched too.
+- cobra's completion commands and the flags cobra adds (`--version`) are not linted: cobra writes their text.
 
-`cmd/reearth/testdata/commands.json` pins every command, alias, argument and flag of the distributed binary. When a change touches the command tree, run `make golden` and commit the diff. Reviewers read that diff to spot renamed or removed commands and flags, which break users' scripts.
+`cmd/reearth/testdata/commands.json` pins every command, alias, argument and flag of the distributed binary, including the `completion` command and `--version` that cobra adds when the CLI runs (`cmdtree.InitDefaults`). When a change touches the command tree, run `make golden` and commit the diff. Reviewers read that diff to spot renamed or removed commands and flags, which break users' scripts.
 
 ## Extensions and self-update
 
@@ -131,7 +135,9 @@ Extensions follow the `gh extension` model with tighter rules. Binaries named `r
 - Only extensions installed with `reearth ext install` run.
 - The SHA-256 of each installed binary is pinned and verified before every run.
 - Extensions from owners other than `reearth` are labeled third-party.
-- Extensions receive no credentials. An extension that needs the API calls `$REEARTH_BIN api`.
+- Extensions are not sandboxed. They run with the user's own access, like any program the user runs, and inherit environment variables, including `REEARTH_TOKEN`. The CLI does not hand them the credentials it stores (keyring or file); an extension that needs the API calls `$REEARTH_BIN api`. This prevents accidental exposure only: a malicious extension can read the keyring itself. What protects users is installing only extensions they trust, which the pinned SHA-256 and the official or third-party label support.
+- Extensions run with `REEARTH_EXTENSION=1`. The CLI uses it to recognise a call from an extension and refuses `auth token` then. An extension can unset the variable, so this guards against mistakes, not against a malicious extension.
+- If a release publishes a checksums file, it must list the binary and the download must match. Only a release without any checksums file installs unverified, after confirmation.
 - When an agent is detected, extensions run only through the explicit `reearth ext exec`.
 
 `reearth upgrade` updates only the `reearth` binary, because every product ships inside it. If a package manager installed the binary, `upgrade` prints that package manager's upgrade command instead of replacing the binary. Downloads are verified against the release's checksums file.
@@ -169,6 +175,8 @@ make test
 make lint      # golangci-lint v2
 make snapshot  # cross-build every release artifact into ./dist
 ```
+
+A build is a release build when its version is a release version: injected by GoReleaser, or stamped by Go for `go install …@vX.Y.Z` or a `go build` at a clean tagged commit. Anything else is a development build: `dev`, a snapshot, a pseudo-version that Go stamps when building at an untagged commit, or a build from a modified checkout (`+dirty`). A development build shows no update notices, and `upgrade` replaces it only with `--force`.
 
 To sign in with a development build, point it at an Auth0 tenant:
 
