@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+
+	"github.com/reearth/cli/sdk/envvar"
 )
 
 // Repo is the GitHub repository that publishes releases.
@@ -52,10 +54,10 @@ func DetectMethod(exe string) Method {
 }
 
 func goBin() string {
-	if v := os.Getenv("GOBIN"); v != "" {
+	if v := envvar.Get("GOBIN"); v != "" {
 		return v
 	}
-	gopath := os.Getenv("GOPATH")
+	gopath := envvar.Get("GOPATH")
 	if gopath == "" {
 		home, err := os.UserHomeDir()
 		if err != nil {

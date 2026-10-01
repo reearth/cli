@@ -1,14 +1,11 @@
 package iostreams
 
-import "testing"
+import (
+	"testing"
 
-func env(kv ...string) func(string) string {
-	m := map[string]string{}
-	for i := 0; i < len(kv); i += 2 {
-		m[kv[i]] = kv[i+1]
-	}
-	return func(k string) string { return m[k] }
-}
+	"github.com/reearth/cli/sdk/envvar"
+	"github.com/reearth/cli/sdk/envvar/envvartest"
+)
 
 func TestDetectAgent(t *testing.T) {
 	for _, tc := range []struct{ v, want string }{
@@ -16,11 +13,13 @@ func TestDetectAgent(t *testing.T) {
 		{"0", ""}, {"off", ""}, {"no", ""}, {"FALSE", ""},
 		{"my-bot", "my-bot"},
 	} {
-		if got := DetectAgent(env("REEARTH_AGENT", tc.v, "CLAUDECODE", "1")); got != tc.want {
+		envvartest.Fake(t, envvar.Map{"REEARTH_AGENT": tc.v, "CLAUDECODE": "1"})
+		if got := DetectAgent(); got != tc.want {
 			t.Errorf("REEARTH_AGENT=%s: got %q, want %q", tc.v, got, tc.want)
 		}
 	}
-	if got := DetectAgent(env("CLAUDECODE", "1")); got != "claude-code" {
+	envvartest.Fake(t, envvar.Map{"CLAUDECODE": "1"})
+	if got := DetectAgent(); got != "claude-code" {
 		t.Errorf("detected %q", got)
 	}
 }
@@ -33,7 +32,8 @@ func TestDetectCI(t *testing.T) {
 		{"CI", "true", true}, {"CI", "1", true}, {"CI", "False", false}, {"CI", "0", false}, {"CI", "off", false},
 		{"JENKINS_URL", "https://ci.example", true},
 	} {
-		if got := DetectCI(env(tc.k, tc.v)); got != tc.want {
+		envvartest.Fake(t, envvar.Map{tc.k: tc.v})
+		if got := DetectCI(); got != tc.want {
 			t.Errorf("%s=%s: got %v", tc.k, tc.v, got)
 		}
 	}

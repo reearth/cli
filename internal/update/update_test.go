@@ -15,6 +15,8 @@ import (
 	"github.com/reearth/cli/sdk/build"
 	"github.com/reearth/cli/sdk/cmdutil"
 	"github.com/reearth/cli/sdk/core"
+	"github.com/reearth/cli/sdk/envvar"
+	"github.com/reearth/cli/sdk/envvar/envvartest"
 	"github.com/reearth/cli/sdk/iostreams"
 	"github.com/reearth/cli/sdk/output"
 )
@@ -38,6 +40,7 @@ func TestNewer(t *testing.T) {
 }
 
 func TestDetectMethod(t *testing.T) {
+	envvartest.Fake(t, nil)
 	cases := map[string]string{
 		"/opt/homebrew/Caskroom/reearth/0.1.0/reearth":                "homebrew",
 		"/home/linuxbrew/.linuxbrew/Cellar/reearth/0.1.0/bin/reearth": "homebrew",
@@ -61,6 +64,12 @@ func TestArchiveName(t *testing.T) {
 	if got := ArchiveName("0.2.0", "windows", "amd64"); got != "reearth_0.2.0_windows_amd64.zip" {
 		t.Error(got)
 	}
+}
+
+// fakeEnv isolates the test from the real environment and gives it its own
+// cache directory.
+func fakeEnv(t *testing.T) {
+	envvartest.Fake(t, envvar.Map{"REEARTH_CACHE_DIR": t.TempDir()})
 }
 
 // fakeReleases points newClient at a server whose latest release is latest
@@ -90,6 +99,7 @@ func setVersion(t *testing.T, v string) {
 }
 
 func TestUpgradeRefusesDevBuild(t *testing.T) {
+	fakeEnv(t)
 	fakeReleases(t, "v0.2.0")
 	setVersion(t, "dev")
 	ios, _, _, _ := iostreams.Test()
@@ -105,7 +115,7 @@ func TestUpgradeRefusesDevBuild(t *testing.T) {
 }
 
 func TestCheckRecordsFailure(t *testing.T) {
-	t.Setenv("REEARTH_CACHE_DIR", t.TempDir())
+	fakeEnv(t)
 	fakeReleases(t, "")
 	check(context.Background(), newClient("test"), nil)
 	s, err := readState()
@@ -130,7 +140,7 @@ func TestCheckRecordsFailure(t *testing.T) {
 }
 
 func TestCheckRecordsTimeBeforeRequest(t *testing.T) {
-	t.Setenv("REEARTH_CACHE_DIR", t.TempDir())
+	fakeEnv(t)
 	started, release := make(chan struct{}), make(chan struct{})
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		close(started)
@@ -138,10 +148,15 @@ func TestCheckRecordsTimeBeforeRequest(t *testing.T) {
 		http.NotFound(w, r)
 	}))
 	t.Cleanup(srv.Close)
+	done := make(chan struct{})
+	t.Cleanup(func() { <-done })
 	t.Cleanup(func() { close(release) })
 	gh := newClient("test")
 	gh.APIBase = srv.URL
-	go check(context.Background(), gh, &state{Latest: "v0.1.0"})
+	go func() {
+		defer close(done)
+		check(context.Background(), gh, &state{Latest: "v0.1.0"})
+	}()
 	<-started
 	// The process may exit now; the attempt must already be recorded.
 	s, err := readState()
@@ -164,7 +179,7 @@ func TestMachineArgs(t *testing.T) {
 }
 
 func TestNotifySkipsParsedMachineOutput(t *testing.T) {
-	t.Setenv("REEARTH_CACHE_DIR", t.TempDir())
+	fakeEnv(t)
 	setVersion(t, "0.1.0")
 	if err := writeState(&state{CheckedAt: time.Now(), Latest: "v0.2.0"}); err != nil {
 		t.Fatal(err)

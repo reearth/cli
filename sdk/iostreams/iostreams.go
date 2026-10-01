@@ -12,6 +12,8 @@ import (
 	"sync"
 
 	"golang.org/x/term"
+
+	"github.com/reearth/cli/sdk/envvar"
 )
 
 type IOStreams struct {
@@ -34,8 +36,6 @@ type IOStreams struct {
 	NoInput bool
 	Quiet   bool
 
-	getenv func(string) string
-
 	progressMu sync.Mutex
 	progress   *spinner
 }
@@ -46,23 +46,22 @@ func System() *IOStreams {
 		In:     os.Stdin,
 		Out:    os.Stdout,
 		ErrOut: os.Stderr,
-		getenv: os.Getenv,
 	}
 	s.stdinTTY = isTerminal(os.Stdin)
 	s.stdoutTTY = isTerminal(os.Stdout)
 	s.stderrTTY = isTerminal(os.Stderr)
-	s.Agent = DetectAgent(os.Getenv)
-	s.CI = DetectCI(os.Getenv)
-	s.NoInput = EnvTrue(os.Getenv("REEARTH_NO_INPUT"))
-	s.outColor = colorEnabled(os.Getenv, s.stdoutTTY)
-	s.errColor = colorEnabled(os.Getenv, s.stderrTTY)
+	s.Agent = DetectAgent()
+	s.CI = DetectCI()
+	s.NoInput = envvar.True("REEARTH_NO_INPUT")
+	s.outColor = colorEnabled(s.stdoutTTY)
+	s.errColor = colorEnabled(s.stderrTTY)
 	return s
 }
 
 // Test returns IOStreams backed by buffers. All streams are non-TTY.
 func Test() (s *IOStreams, in *bytes.Buffer, out *bytes.Buffer, errOut *bytes.Buffer) {
 	in, out, errOut = &bytes.Buffer{}, &bytes.Buffer{}, &bytes.Buffer{}
-	s = &IOStreams{In: in, Out: out, ErrOut: errOut, getenv: func(string) string { return "" }}
+	s = &IOStreams{In: in, Out: out, ErrOut: errOut}
 	return
 }
 
@@ -199,25 +198,17 @@ func (s *IOStreams) StopProgress() {
 	}
 }
 
-// Getenv reads an environment variable through the stream's environment.
-func (s *IOStreams) Getenv(key string) string {
-	if s.getenv == nil {
-		return os.Getenv(key)
-	}
-	return s.getenv(key)
-}
-
 // colorEnabled follows the conventions of these variables rather than
-// ParseBool: any NO_COLOR disables color (no-color.org), and any
+// envvar.Bool: any NO_COLOR disables color (no-color.org), and any
 // CLICOLOR_FORCE but "0" forces it (bixense.com/clicolors).
-func colorEnabled(getenv func(string) string, tty bool) bool {
-	if getenv("NO_COLOR") != "" {
+func colorEnabled(tty bool) bool {
+	if envvar.Get("NO_COLOR") != "" {
 		return false
 	}
-	if v := getenv("CLICOLOR_FORCE"); v != "" && v != "0" {
+	if v := envvar.Get("CLICOLOR_FORCE"); v != "" && v != "0" {
 		return true
 	}
-	if getenv("TERM") == "dumb" {
+	if envvar.Get("TERM") == "dumb" {
 		return false
 	}
 	return tty

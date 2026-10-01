@@ -13,6 +13,8 @@ import (
 	"sort"
 
 	"go.yaml.in/yaml/v3"
+
+	"github.com/reearth/cli/sdk/envvar"
 )
 
 const currentVersion = 1
@@ -85,17 +87,21 @@ type EnvProduct struct {
 	Extra map[string]any `yaml:",inline" json:"-"`
 }
 
+// The directory fallbacks use os.UserHomeDir and os.UserCacheDir, which read
+// HOME and XDG_* from the real environment, not through envvar. Tests set the
+// REEARTH_*_DIR variables so the fallbacks are never reached.
+
 // Dir returns the configuration directory.
 // REEARTH_CONFIG_DIR > XDG_CONFIG_HOME/reearth > %AppData%/reearth (Windows) > ~/.config/reearth
 func Dir() string {
-	if d := os.Getenv("REEARTH_CONFIG_DIR"); d != "" {
+	if d := envvar.Get("REEARTH_CONFIG_DIR"); d != "" {
 		return d
 	}
-	if d := os.Getenv("XDG_CONFIG_HOME"); d != "" {
+	if d := envvar.Get("XDG_CONFIG_HOME"); d != "" {
 		return filepath.Join(d, "reearth")
 	}
 	if runtime.GOOS == "windows" {
-		if d := os.Getenv("AppData"); d != "" {
+		if d := envvar.Get("AppData"); d != "" {
 			return filepath.Join(d, "reearth")
 		}
 	}
@@ -105,10 +111,10 @@ func Dir() string {
 
 // CacheDir returns the cache directory (tokens are never stored here).
 func CacheDir() string {
-	if d := os.Getenv("REEARTH_CACHE_DIR"); d != "" {
+	if d := envvar.Get("REEARTH_CACHE_DIR"); d != "" {
 		return d
 	}
-	if d := os.Getenv("XDG_CACHE_HOME"); d != "" {
+	if d := envvar.Get("XDG_CACHE_HOME"); d != "" {
 		return filepath.Join(d, "reearth")
 	}
 	if d, err := os.UserCacheDir(); err == nil {
@@ -119,14 +125,14 @@ func CacheDir() string {
 
 // DataDir returns the data directory (extensions live here).
 func DataDir() string {
-	if d := os.Getenv("REEARTH_DATA_DIR"); d != "" {
+	if d := envvar.Get("REEARTH_DATA_DIR"); d != "" {
 		return d
 	}
-	if d := os.Getenv("XDG_DATA_HOME"); d != "" {
+	if d := envvar.Get("XDG_DATA_HOME"); d != "" {
 		return filepath.Join(d, "reearth")
 	}
 	if runtime.GOOS == "windows" {
-		if d := os.Getenv("LocalAppData"); d != "" {
+		if d := envvar.Get("LocalAppData"); d != "" {
 			return filepath.Join(d, "reearth")
 		}
 	}

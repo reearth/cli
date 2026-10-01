@@ -17,6 +17,7 @@ import (
 	"github.com/reearth/cli/sdk/cmdutil"
 	"github.com/reearth/cli/sdk/config"
 	"github.com/reearth/cli/sdk/credstore"
+	"github.com/reearth/cli/sdk/envvar"
 )
 
 // Where the resolved account came from.
@@ -41,8 +42,6 @@ type Manager struct {
 	LockDir string
 	// HTTPClient is used for token endpoint calls.
 	HTTPClient *http.Client
-	// Getenv reads environment variables (for tests).
-	Getenv func(string) string
 
 	mu      sync.Mutex
 	sources map[string]*Source
@@ -55,7 +54,6 @@ func NewManager(cfg *config.Config, appName string) *Manager {
 		Keyring:   credstore.Keyring(),
 		FileStore: credstore.File(credstore.DefaultFilePath(config.Dir())),
 		LockDir:   filepath.Join(config.CacheDir(), "locks"),
-		Getenv:    os.Getenv,
 	}
 }
 
@@ -108,14 +106,14 @@ func (m *Manager) Resolve(flagAccount string, project *config.Project) (*Resolve
 	if flagAccount != "" {
 		return pick(flagAccount, SourceFlag)
 	}
-	if tok := m.Getenv("REEARTH_TOKEN"); tok != "" {
-		env := m.Getenv("REEARTH_ENV")
+	if tok := envvar.Get("REEARTH_TOKEN"); tok != "" {
+		env := envvar.Get("REEARTH_ENV")
 		if env == "" {
 			env = EnvProd
 		}
 		return &Resolved{Account: &config.Account{Env: env, Kind: config.KindToken}, Source: SourceToken, Token: tok}, nil
 	}
-	if name := m.Getenv("REEARTH_ACCOUNT"); name != "" {
+	if name := envvar.Get("REEARTH_ACCOUNT"); name != "" {
 		return pick(name, SourceEnv)
 	}
 	if project != nil && project.Account != "" {

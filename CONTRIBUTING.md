@@ -26,6 +26,7 @@ sdk/                 the library that products build on
   corecmd/           login, account, auth, api, config, search, help topics, skills, doctor, version
   auth/ credstore/   login flows, accounts, token refresh, keyring
   config/            user config (~/.config/reearth) and project files (.reearth.yaml)
+  envvar/            the one way to read environment variables; envvartest fakes them in tests
   output/ iostreams/ rendering, TTY / agent / CI detection, colors, spinners
   httpx/             authenticated HTTP transport with retries and debug traces
   skills/            the SKILL.md that `skills install` writes
@@ -183,6 +184,8 @@ To sign in with a development build, point it at an Auth0 tenant:
 ```sh
 export REEARTH_AUTH_DOMAIN=example.auth0.com REEARTH_AUTH_CLIENT_ID=xxx REEARTH_AUTH_AUDIENCE=https://api.example
 ```
+
+Read environment variables only through `sdk/envvar`. Tests replace the environment with `envvartest.Fake`, which starts from an empty map, so your shell's variables (`CLAUDECODE`, `CI`, `REEARTH_TOKEN`, ...) never reach them.
 
 To keep a development build away from your real config, set `REEARTH_CONFIG_DIR`, `REEARTH_CACHE_DIR` and `REEARTH_DATA_DIR`. `reearth doctor` diagnoses the config, the keyring, network access, clock skew and the installation.
 

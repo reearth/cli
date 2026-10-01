@@ -15,6 +15,8 @@ import (
 	"github.com/reearth/cli/sdk/app"
 	"github.com/reearth/cli/sdk/cmdutil"
 	"github.com/reearth/cli/sdk/core"
+	"github.com/reearth/cli/sdk/envvar"
+	"github.com/reearth/cli/sdk/envvar/envvartest"
 	"github.com/reearth/cli/sdk/iostreams"
 )
 
@@ -25,16 +27,17 @@ type result struct {
 	code        int
 }
 
-func setup(t *testing.T) {
+// setup runs the test in a temporary directory with an environment that
+// holds only the CLI's directories; the real environment is not visible.
+func setup(t *testing.T) envvar.Map {
 	t.Helper()
 	dir := t.TempDir()
-	t.Setenv("REEARTH_CONFIG_DIR", filepath.Join(dir, "config"))
-	t.Setenv("REEARTH_CACHE_DIR", filepath.Join(dir, "cache"))
-	t.Setenv("REEARTH_DATA_DIR", filepath.Join(dir, "data"))
-	for _, k := range []string{"REEARTH_TOKEN", "REEARTH_ACCOUNT", "REEARTH_HELLO_TOKEN", "REEARTH_ENV", "REEARTH_EXTENSION"} {
-		t.Setenv(k, "")
-	}
 	t.Chdir(dir)
+	return envvartest.Fake(t, envvar.Map{
+		"REEARTH_CONFIG_DIR": filepath.Join(dir, "config"),
+		"REEARTH_CACHE_DIR":  filepath.Join(dir, "cache"),
+		"REEARTH_DATA_DIR":   filepath.Join(dir, "data"),
+	})
 }
 
 func run(t *testing.T, args ...string) result {
@@ -47,7 +50,7 @@ func run(t *testing.T, args ...string) result {
 }
 
 // fakeAuth serves token and userinfo. Setting revoked makes refreshes fail.
-func fakeAuth(t *testing.T) (revoked *atomic.Bool, refreshes *atomic.Int32) {
+func fakeAuth(t *testing.T, env envvar.Map) (revoked *atomic.Bool, refreshes *atomic.Int32) {
 	revoked, refreshes = &atomic.Bool{}, &atomic.Int32{}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/oauth/token", func(w http.ResponseWriter, r *http.Request) {
@@ -70,9 +73,9 @@ func fakeAuth(t *testing.T) (revoked *atomic.Bool, refreshes *atomic.Int32) {
 	mux.HandleFunc("/oauth/revoke", func(w http.ResponseWriter, r *http.Request) {})
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
-	t.Setenv("REEARTH_AUTH_DOMAIN", srv.URL)
-	t.Setenv("REEARTH_AUTH_CLIENT_ID", "cli")
-	t.Setenv("REEARTH_AUTH_AUDIENCE", "https://api.test")
+	env["REEARTH_AUTH_DOMAIN"] = srv.URL
+	env["REEARTH_AUTH_CLIENT_ID"] = "cli"
+	env["REEARTH_AUTH_AUDIENCE"] = "https://api.test"
 	return revoked, refreshes
 }
 
@@ -113,8 +116,8 @@ func errCode(t *testing.T, r result) string {
 }
 
 func TestAuthStatusDetectsRevokedSession(t *testing.T) {
-	setup(t)
-	revoked, refreshes := fakeAuth(t)
+	env := setup(t)
+	revoked, refreshes := fakeAuth(t, env)
 	login(t)
 	if r := run(t, "auth", "status", "--jq", ".[0].valid"); r.out != "true\n" {
 		t.Fatalf("auth status = %+v", r)
@@ -128,10 +131,10 @@ func TestAuthStatusDetectsRevokedSession(t *testing.T) {
 }
 
 func TestAuthTokenRefusedInExtension(t *testing.T) {
-	setup(t)
-	fakeAuth(t)
+	env := setup(t)
+	fakeAuth(t, env)
 	login(t)
-	t.Setenv("REEARTH_EXTENSION", "1")
+	env["REEARTH_EXTENSION"] = "1"
 	r := run(t, "auth", "token", "--json")
 	if r.code != cmdutil.ExitError || r.out != "" || errCode(t, r) != "auth.token_refused_extension" {
 		t.Fatalf("%+v", r)
@@ -139,8 +142,8 @@ func TestAuthTokenRefusedInExtension(t *testing.T) {
 }
 
 func TestLogoutNeedsConfirmation(t *testing.T) {
-	setup(t)
-	fakeAuth(t)
+	env := setup(t)
+	fakeAuth(t, env)
 	login(t)
 	r := run(t, "logout", "--json")
 	if r.code != cmdutil.ExitUsage || errCode(t, r) != "confirmation_required" {
@@ -155,13 +158,13 @@ func TestLogoutNeedsConfirmation(t *testing.T) {
 }
 
 func TestWhoamiReportsProductTokenOverride(t *testing.T) {
-	setup(t)
-	fakeAuth(t)
+	env := setup(t)
+	fakeAuth(t, env)
 	login(t)
 	if r := run(t, "whoami", "--json"); strings.Contains(r.out, "token_overrides") {
 		t.Fatalf("unexpected override: %s", r.out)
 	}
-	t.Setenv("REEARTH_HELLO_TOKEN", "x")
+	env["REEARTH_HELLO_TOKEN"] = "x"
 	r := run(t, "whoami", "--jq", ".token_overrides[0]")
 	if r.out != "REEARTH_HELLO_TOKEN\n" {
 		t.Fatalf("%+v", r)
@@ -174,8 +177,8 @@ func TestWhoamiReportsProductTokenOverride(t *testing.T) {
 }
 
 func TestUseWithoutArgumentNamesIt(t *testing.T) {
-	setup(t)
-	fakeAuth(t)
+	env := setup(t)
+	fakeAuth(t, env)
 	login(t)
 	r := run(t, "use")
 	if r.code != cmdutil.ExitUsage || !strings.Contains(r.errOut, "reearth use <account>") {
@@ -184,8 +187,8 @@ func TestUseWithoutArgumentNamesIt(t *testing.T) {
 }
 
 func TestDoctorFailureReportsError(t *testing.T) {
-	setup(t)
-	dir := os.Getenv("REEARTH_CONFIG_DIR")
+	env := setup(t)
+	dir := env["REEARTH_CONFIG_DIR"]
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -203,8 +206,8 @@ func TestDoctorFailureReportsError(t *testing.T) {
 }
 
 func TestWhoamiTokenAccountStorage(t *testing.T) {
-	setup(t)
-	t.Setenv("REEARTH_TOKEN", "x")
+	env := setup(t)
+	env["REEARTH_TOKEN"] = "x"
 	if r := run(t, "whoami", "--jq", ".storage"); r.code != 0 || r.out != "env\n" {
 		t.Fatalf("%+v", r)
 	}

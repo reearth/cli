@@ -2,7 +2,6 @@ package corecmd
 
 import (
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -11,6 +10,7 @@ import (
 	"github.com/reearth/cli/sdk/cmdutil"
 	"github.com/reearth/cli/sdk/config"
 	"github.com/reearth/cli/sdk/core"
+	"github.com/reearth/cli/sdk/envvar"
 	"github.com/reearth/cli/sdk/output"
 )
 
@@ -163,7 +163,7 @@ that are set are listed as well.`,
 			}
 			var overrides []string
 			for _, pr := range f.Products {
-				if k := core.ProductEnv(pr, "TOKEN"); os.Getenv(k) != "" {
+				if k := core.ProductEnv(pr, "TOKEN"); envvar.Get(k) != "" {
 					overrides = append(overrides, k)
 				}
 			}

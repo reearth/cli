@@ -15,7 +15,7 @@ import (
 	"github.com/reearth/cli/sdk/build"
 	"github.com/reearth/cli/sdk/config"
 	"github.com/reearth/cli/sdk/core"
-	"github.com/reearth/cli/sdk/iostreams"
+	"github.com/reearth/cli/sdk/envvar"
 )
 
 const checkInterval = 24 * time.Hour
@@ -96,7 +96,7 @@ func check(ctx context.Context, gh *ghrelease.Client, prev *state) {
 }
 
 func enabled(f *core.Factory, args []string) bool {
-	if build.IsDev() || !f.IO.IsInteractive() || iostreams.EnvTrue(os.Getenv("REEARTH_NO_UPDATE_NOTIFIER")) {
+	if build.IsDev() || !f.IO.IsInteractive() || envvar.True("REEARTH_NO_UPDATE_NOTIFIER") {
 		return false
 	}
 	if len(args) > 0 && (args[0] == "upgrade" || args[0] == "__complete" || args[0] == "completion") {

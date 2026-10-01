@@ -2,9 +2,10 @@ package config
 
 import (
 	"fmt"
-	"os"
 	"slices"
 	"strings"
+
+	"github.com/reearth/cli/sdk/envvar"
 )
 
 // Setting is a user-tunable key for `reearth config get/set`.
@@ -54,7 +55,7 @@ func (c *Config) Get(key string) (string, Origin, error) {
 	if !ok {
 		return "", "", unknownKey(key)
 	}
-	if v := os.Getenv(SettingEnv(key)); v != "" {
+	if v := envvar.Get(SettingEnv(key)); v != "" {
 		return v, OriginEnv, nil
 	}
 	if v, ok := c.Settings[key]; ok && v != nil {

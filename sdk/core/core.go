@@ -17,6 +17,7 @@ import (
 	"github.com/reearth/cli/sdk/build"
 	"github.com/reearth/cli/sdk/cmdutil"
 	"github.com/reearth/cli/sdk/config"
+	"github.com/reearth/cli/sdk/envvar"
 	"github.com/reearth/cli/sdk/httpx"
 	"github.com/reearth/cli/sdk/iostreams"
 	"github.com/reearth/cli/sdk/output"
@@ -142,12 +143,8 @@ func (f *Factory) Auth() (*auth.Manager, error) {
 func (f *Factory) Account() (*auth.Resolved, error) {
 	f.load()
 	m := f.auth
-	getenv := m.Getenv
-	if getenv == nil {
-		getenv = os.Getenv
-	}
 	if f.cfgErr != nil {
-		if f.Flags.Account != "" || getenv("REEARTH_TOKEN") == "" {
+		if f.Flags.Account != "" || envvar.Get("REEARTH_TOKEN") == "" {
 			return nil, f.configErr()
 		}
 		f.reportConfigError(true)
@@ -156,7 +153,7 @@ func (f *Factory) Account() (*auth.Resolved, error) {
 	if err != nil {
 		// --account, REEARTH_TOKEN and REEARTH_ACCOUNT take precedence over
 		// the project file, so a broken one does not matter to them.
-		if f.Flags.Account == "" && getenv("REEARTH_TOKEN") == "" && getenv("REEARTH_ACCOUNT") == "" {
+		if f.Flags.Account == "" && envvar.Get("REEARTH_TOKEN") == "" && envvar.Get("REEARTH_ACCOUNT") == "" {
 			return nil, err
 		}
 		f.projWarn.Do(func() { f.warnIgnored(err) })
@@ -272,7 +269,7 @@ func (f *Factory) PublicHTTPClient() *http.Client {
 // attached and refreshed transparently; products never see token strings.
 // REEARTH_<PRODUCT>_TOKEN, if set, is used as a static token for that product.
 func (f *Factory) HTTPClient(ctx context.Context, p Product) (*http.Client, error) {
-	if tok := os.Getenv(ProductEnv(p, "TOKEN")); tok != "" {
+	if tok := envvar.Get(ProductEnv(p, "TOKEN")); tok != "" {
 		f.load()
 		m := f.auth
 		if f.cfgErr != nil {
@@ -300,7 +297,7 @@ func (f *Factory) HTTPClient(ctx context.Context, p Product) (*http.Client, erro
 // Env returns the auth environment of the resolved account (prod if none).
 // A broken config file fails it unless the account comes from REEARTH_TOKEN.
 func (f *Factory) Env() (*auth.Env, error) {
-	name := os.Getenv("REEARTH_ENV")
+	name := envvar.Get("REEARTH_ENV")
 	r, err := f.Account()
 	if err == nil {
 		name = r.Account.Env
@@ -317,7 +314,7 @@ func (f *Factory) Env() (*auth.Env, error) {
 // BaseURL resolves a product's API base URL:
 // REEARTH_<PRODUCT>_BASE_URL > user env config > product default.
 func (f *Factory) BaseURL(p Product) (string, error) {
-	if u := os.Getenv(ProductEnv(p, "BASE_URL")); u != "" {
+	if u := envvar.Get(ProductEnv(p, "BASE_URL")); u != "" {
 		return strings.TrimRight(u, "/"), nil
 	}
 	env, err := f.Env()
@@ -342,7 +339,7 @@ func (f *Factory) ProjectValue(p Product, key, flagValue string) string {
 	if flagValue != "" {
 		return flagValue
 	}
-	if v := os.Getenv(ProductEnv(p, strings.ToUpper(key))); v != "" {
+	if v := envvar.Get(ProductEnv(p, strings.ToUpper(key))); v != "" {
 		return v
 	}
 	v, _ := f.OptionalProject().Value(p.Name(), key)

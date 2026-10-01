@@ -18,6 +18,7 @@ import (
 	"github.com/reearth/cli/internal/ghrelease"
 	"github.com/reearth/cli/sdk/cmdutil"
 	"github.com/reearth/cli/sdk/core"
+	"github.com/reearth/cli/sdk/envvar/envvartest"
 	"github.com/reearth/cli/sdk/iostreams"
 )
 
@@ -78,6 +79,7 @@ func fakeGitHubFiles(t *testing.T, bin []byte, sums []sumsFile) *httptest.Server
 }
 
 func newTestManager(t *testing.T, srv *httptest.Server) *Manager {
+	envvartest.Fake(t, nil)
 	gh := ghrelease.New("test")
 	gh.APIBase = srv.URL
 	return &Manager{Dir: t.TempDir(), GH: gh, Reserved: func(n string) bool { return n == "login" }}
@@ -167,6 +169,7 @@ func TestPlanChecksums(t *testing.T) {
 }
 
 func TestReservedNames(t *testing.T) {
+	envvartest.Fake(t, nil)
 	m := &Manager{Dir: t.TempDir(), GH: ghrelease.New("test"), Reserved: func(n string) bool { return n == "login" }}
 	for _, n := range []string{"login", "help", "completion"} {
 		if _, err := m.PlanInstall(context.Background(), "someone/reearth-"+n, ""); err == nil || !strings.Contains(err.Error(), "built-in") {
@@ -175,7 +178,8 @@ func TestReservedNames(t *testing.T) {
 	}
 }
 
-func testFactory() *core.Factory {
+func testFactory(t *testing.T) *core.Factory {
+	envvartest.Fake(t, nil)
 	ios, _, _, _ := iostreams.Test()
 	return &core.Factory{AppName: "reearth", IO: ios, Flags: &core.GlobalFlags{}}
 }
@@ -191,7 +195,7 @@ func TestDispatchSkipsCobraBuiltins(t *testing.T) {
 	}
 	root := &cobra.Command{Use: "reearth"}
 	for n := range cobraBuiltins {
-		if handled, _ := Dispatch(m)(testFactory(), root, []string{n}); handled {
+		if handled, _ := Dispatch(m)(testFactory(t), root, []string{n}); handled {
 			t.Errorf("%s was dispatched to an extension", n)
 		}
 	}
@@ -210,13 +214,13 @@ func TestRemoveRequiresConfirmation(t *testing.T) {
 		return cmd.Execute()
 	}
 	var e *cmdutil.Error
-	if err := run(testFactory()); !errors.As(err, &e) || e.Code != "confirmation_required" {
+	if err := run(testFactory(t)); !errors.As(err, &e) || e.Code != "confirmation_required" {
 		t.Fatalf("err = %v", err)
 	}
 	if _, ok := m.Get("tool"); !ok {
 		t.Fatal("removed without confirmation")
 	}
-	f := testFactory()
+	f := testFactory(t)
 	f.Flags.Yes = true
 	if err := run(f); err != nil {
 		t.Fatal(err)

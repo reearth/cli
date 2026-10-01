@@ -4,7 +4,6 @@ package auth
 
 import (
 	"fmt"
-	"os"
 	"sort"
 	"strings"
 
@@ -13,6 +12,7 @@ import (
 	"github.com/reearth/cli/sdk/build"
 	"github.com/reearth/cli/sdk/cmdutil"
 	"github.com/reearth/cli/sdk/config"
+	"github.com/reearth/cli/sdk/envvar"
 )
 
 // Built-in environments. Values are public (native app client IDs are not
@@ -89,13 +89,13 @@ func ResolveEnv(cfg *config.Config, name string) (*Env, error) {
 	}
 	dev := build.IsDev()
 	if dev {
-		if v := os.Getenv("REEARTH_AUTH_DOMAIN"); v != "" {
+		if v := envvar.Get("REEARTH_AUTH_DOMAIN"); v != "" {
 			env.Domain = v
 		}
-		if v := os.Getenv("REEARTH_AUTH_CLIENT_ID"); v != "" {
+		if v := envvar.Get("REEARTH_AUTH_CLIENT_ID"); v != "" {
 			env.ClientID = v
 		}
-		if v := os.Getenv("REEARTH_AUTH_AUDIENCE"); v != "" {
+		if v := envvar.Get("REEARTH_AUTH_AUDIENCE"); v != "" {
 			env.Audience = v
 		}
 	}

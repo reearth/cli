@@ -17,6 +17,8 @@ import (
 	"github.com/reearth/cli/sdk/app"
 	"github.com/reearth/cli/sdk/cmdutil"
 	"github.com/reearth/cli/sdk/core"
+	"github.com/reearth/cli/sdk/envvar"
+	"github.com/reearth/cli/sdk/envvar/envvartest"
 	"github.com/reearth/cli/sdk/iostreams"
 )
 
@@ -27,16 +29,17 @@ type result struct {
 	code        int
 }
 
-func setup(t *testing.T) {
+// setup runs the test in a temporary directory with an environment that
+// holds only the CLI's directories; the real environment is not visible.
+func setup(t *testing.T) envvar.Map {
 	t.Helper()
 	dir := t.TempDir()
-	t.Setenv("REEARTH_CONFIG_DIR", filepath.Join(dir, "config"))
-	t.Setenv("REEARTH_CACHE_DIR", filepath.Join(dir, "cache"))
-	t.Setenv("REEARTH_DATA_DIR", filepath.Join(dir, "data"))
-	for _, k := range []string{"REEARTH_TOKEN", "REEARTH_ACCOUNT", "REEARTH_HELLO_TOKEN", "REEARTH_ENV"} {
-		t.Setenv(k, "")
-	}
 	t.Chdir(dir)
+	return envvartest.Fake(t, envvar.Map{
+		"REEARTH_CONFIG_DIR": filepath.Join(dir, "config"),
+		"REEARTH_CACHE_DIR":  filepath.Join(dir, "cache"),
+		"REEARTH_DATA_DIR":   filepath.Join(dir, "data"),
+	})
 }
 
 func run(t *testing.T, o app.Options, stdin string, open func(string) error, args ...string) result {
@@ -52,7 +55,7 @@ func run(t *testing.T, o app.Options, stdin string, open func(string) error, arg
 }
 
 // fakeAuth serves the endpoints the CLI uses: token (code + refresh), userinfo, revoke.
-func fakeAuth(t *testing.T) (*httptest.Server, *atomic.Int32) {
+func fakeAuth(t *testing.T, env envvar.Map) (*httptest.Server, *atomic.Int32) {
 	var revoked atomic.Int32
 	mux := http.NewServeMux()
 	mux.HandleFunc("/oauth/token", func(w http.ResponseWriter, r *http.Request) {
@@ -75,9 +78,9 @@ func fakeAuth(t *testing.T) (*httptest.Server, *atomic.Int32) {
 	mux.HandleFunc("/oauth/revoke", func(w http.ResponseWriter, r *http.Request) { revoked.Add(1) })
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
-	t.Setenv("REEARTH_AUTH_DOMAIN", srv.URL)
-	t.Setenv("REEARTH_AUTH_CLIENT_ID", "cli")
-	t.Setenv("REEARTH_AUTH_AUDIENCE", "https://api.test")
+	env["REEARTH_AUTH_DOMAIN"] = srv.URL
+	env["REEARTH_AUTH_CLIENT_ID"] = "cli"
+	env["REEARTH_AUTH_AUDIENCE"] = "https://api.test"
 	return srv, &revoked
 }
 
@@ -137,8 +140,8 @@ func TestErrorsAndExitCodes(t *testing.T) {
 }
 
 func TestOAuthLoginAndAuthenticatedCalls(t *testing.T) {
-	setup(t)
-	_, revoked := fakeAuth(t)
+	env := setup(t)
+	_, revoked := fakeAuth(t, env)
 
 	r := run(t, unified, "", browser, "login", "--web", "--insecure-storage", "--json")
 	if r.code != 0 {
@@ -184,16 +187,16 @@ func TestOAuthLoginAndAuthenticatedCalls(t *testing.T) {
 }
 
 func TestTokenAccountAndProductScope(t *testing.T) {
-	setup(t)
+	env := setup(t)
 	r := run(t, unified, "secret-token\n", nil, "login", "ci", "--with-token", "--product", "cms", "--insecure-storage")
 	if r.code != 0 {
 		t.Fatalf("%+v", r)
 	}
-	creds, _ := os.ReadFile(filepath.Join(os.Getenv("REEARTH_CONFIG_DIR"), "credentials.json"))
+	creds, _ := os.ReadFile(filepath.Join(env["REEARTH_CONFIG_DIR"], "credentials.json"))
 	if !strings.Contains(string(creds), "secret-token") {
 		t.Fatal("token not stored")
 	}
-	cfg, _ := os.ReadFile(filepath.Join(os.Getenv("REEARTH_CONFIG_DIR"), "config.yaml"))
+	cfg, _ := os.ReadFile(filepath.Join(env["REEARTH_CONFIG_DIR"], "config.yaml"))
 	if strings.Contains(string(cfg), "secret-token") {
 		t.Fatal("secret leaked into config.yaml")
 	}
@@ -281,8 +284,32 @@ func TestAgentHelpNote(t *testing.T) {
 	}
 }
 
-func TestDocs(t *testing.T) {
+// TestFakeEnvHidesRealEnv: under envvartest.Fake, the process environment
+// does not reach the CLI, so a developer's shell cannot change test results.
+func TestFakeEnvHidesRealEnv(t *testing.T) {
+	t.Setenv("CLAUDECODE", "1")
+	t.Setenv("REEARTH_TOKEN", "x")
 	setup(t)
+	run := func(args ...string) (int, string) {
+		ios := iostreams.System()
+		if ios.Agent != "" {
+			t.Fatalf("agent detected: %q", ios.Agent)
+		}
+		var out strings.Builder
+		ios.In, ios.Out, ios.ErrOut = strings.NewReader(""), &out, &out
+		ios.SetTTY(false, false, false)
+		return app.Execute(app.NewFactory(unified, ios), unified, args), out.String()
+	}
+	if _, out := run("hello", "--help"); strings.Contains(out, "`reearth search") {
+		t.Error("agent help note shown")
+	}
+	if code, out := run("whoami", "--json"); code == 0 || strings.Contains(out, `"source": "REEARTH_TOKEN"`) {
+		t.Errorf("REEARTH_TOKEN seen: exit %d, %s", code, out)
+	}
+}
+
+func TestDocs(t *testing.T) {
+	env := setup(t)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/llms-full.txt" {
 			http.NotFound(w, r)
@@ -291,7 +318,7 @@ func TestDocs(t *testing.T) {
 		_, _ = w.Write([]byte("# 参照フィールドでモデルどうしをつなぐ\n\nSource: https://docs.reearth.io/ja/cms/reference-field/\n\n> 参照フィールドの手順。\n\n[モデル](/ja/cms/model/)\n"))
 	}))
 	t.Cleanup(srv.Close)
-	t.Setenv("REEARTH_DOCS_URL", srv.URL)
+	env["REEARTH_DOCS_URL"] = srv.URL
 
 	r := run(t, unified, "", nil, "docs", "search", "参照フィールド", "--jq", ".[0].id")
 	if r.code != 0 || r.out != "ja/cms/reference-field\n" {
@@ -404,8 +431,8 @@ func TestSymlinkDispatch(t *testing.T) {
 }
 
 func TestBrokenFilesWarn(t *testing.T) {
-	setup(t)
-	dir := os.Getenv("REEARTH_CONFIG_DIR")
+	env := setup(t)
+	dir := env["REEARTH_CONFIG_DIR"]
 	_ = os.MkdirAll(dir, 0o700)
 	_ = os.WriteFile(filepath.Join(dir, "config.yaml"), []byte("settings: [\n"), 0o600)
 	r := run(t, unified, "", nil, "hello", "world")
@@ -418,7 +445,7 @@ func TestBrokenFilesWarn(t *testing.T) {
 	if r := run(t, unified, "", nil, "whoami"); r.code == 0 || !strings.Contains(r.errOut, "cms.auth.token looks like a secret") {
 		t.Fatalf("a broken project file must stop account resolution: %+v", r)
 	}
-	t.Setenv("REEARTH_TOKEN", "x")
+	env["REEARTH_TOKEN"] = "x"
 	r = run(t, unified, "", nil, "whoami", "--json")
 	if r.code != 0 || !strings.Contains(r.out, `"source": "REEARTH_TOKEN"`) || !strings.Contains(r.errOut, ".reearth.yaml") {
 		t.Fatalf("REEARTH_TOKEN with a broken project file: %+v", r)
@@ -431,8 +458,8 @@ func TestBrokenFilesWarn(t *testing.T) {
 func TestBrokenConfig(t *testing.T) {
 	for name, content := range map[string]string{"bad yaml": "settings: [\n", "bad version": "version: -5\n"} {
 		t.Run(name, func(t *testing.T) {
-			setup(t)
-			dir := os.Getenv("REEARTH_CONFIG_DIR")
+			env := setup(t)
+			dir := env["REEARTH_CONFIG_DIR"]
 			_ = os.MkdirAll(dir, 0o700)
 			_ = os.WriteFile(filepath.Join(dir, "config.yaml"), []byte(content), 0o600)
 			// Commands that need the file fail with one error that says how to fix it.
@@ -449,7 +476,7 @@ func TestBrokenConfig(t *testing.T) {
 					t.Errorf("%v: %+v", args, r)
 				}
 			}
-			t.Setenv("REEARTH_TOKEN", "x")
+			env["REEARTH_TOKEN"] = "x"
 			r := run(t, unified, "", nil, "whoami", "--json")
 			if r.code != 0 || !strings.Contains(r.out, `"source": "REEARTH_TOKEN"`) || strings.Count(r.errOut, "ignoring a file that cannot be loaded") != 1 {
 				t.Errorf("REEARTH_TOKEN whoami: %+v", r)
@@ -462,8 +489,8 @@ func TestBrokenConfig(t *testing.T) {
 }
 
 func TestInvalidOutputSetting(t *testing.T) {
-	setup(t)
-	t.Setenv("REEARTH_OUTPUT", "xml")
+	env := setup(t)
+	env["REEARTH_OUTPUT"] = "xml"
 	ios, _, _, errOut := iostreams.Test()
 	ios.SetTTY(false, true, false)
 	code := app.Execute(app.NewFactory(unified, ios), unified, []string{"version"})

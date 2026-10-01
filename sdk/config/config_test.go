@@ -6,6 +6,8 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/reearth/cli/sdk/envvar/envvartest"
 )
 
 func TestSaveLoadRoundTrip(t *testing.T) {
@@ -52,6 +54,7 @@ func TestRemoveAccountMovesActive(t *testing.T) {
 }
 
 func TestSettings(t *testing.T) {
+	env := envvartest.Fake(t, nil)
 	c, _ := LoadFile(filepath.Join(t.TempDir(), "c.yaml"))
 	if err := c.Set("output", "xml"); err == nil {
 		t.Error("invalid value accepted")
@@ -63,7 +66,7 @@ func TestSettings(t *testing.T) {
 	if v != "enabled" || o != OriginDefault {
 		t.Errorf("default = %s/%s", v, o)
 	}
-	t.Setenv("REEARTH_PROMPT", "disabled")
+	env["REEARTH_PROMPT"] = "disabled"
 	_ = c.Set("prompt", "enabled")
 	if v, o, _ := c.Get("prompt"); v != "disabled" || o != OriginEnv {
 		t.Errorf("env override = %s/%s", v, o)

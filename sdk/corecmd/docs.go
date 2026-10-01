@@ -3,7 +3,6 @@ package corecmd
 import (
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -14,6 +13,7 @@ import (
 	"github.com/reearth/cli/sdk/config"
 	"github.com/reearth/cli/sdk/core"
 	"github.com/reearth/cli/sdk/docs"
+	"github.com/reearth/cli/sdk/envvar"
 	"github.com/reearth/cli/sdk/output"
 )
 
@@ -134,7 +134,7 @@ so they can be followed.`,
 }
 
 func docsSite(f *core.Factory) string {
-	if u := os.Getenv("REEARTH_DOCS_URL"); u != "" {
+	if u := envvar.Get("REEARTH_DOCS_URL"); u != "" {
 		return u
 	}
 	return docs.DefaultSite
@@ -154,7 +154,7 @@ func loadDocs(cmd *cobra.Command, f *core.Factory) ([]docs.Page, error) {
 		hint := "check the network, or set REEARTH_DOCS_URL"
 		if se := (*docs.StatusError)(nil); errors.As(err, &se) || errors.Is(err, docs.ErrNoPages) {
 			hint = "the site may be down; try again later"
-			if os.Getenv("REEARTH_DOCS_URL") != "" {
+			if envvar.Get("REEARTH_DOCS_URL") != "" {
 				hint = "check that REEARTH_DOCS_URL points at a Re:Earth documentation site"
 			}
 		}

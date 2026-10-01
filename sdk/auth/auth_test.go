@@ -19,6 +19,8 @@ import (
 	"github.com/reearth/cli/sdk/cmdutil"
 	"github.com/reearth/cli/sdk/config"
 	"github.com/reearth/cli/sdk/credstore"
+	"github.com/reearth/cli/sdk/envvar"
+	"github.com/reearth/cli/sdk/envvar/envvartest"
 	"github.com/reearth/cli/sdk/iostreams"
 )
 
@@ -176,7 +178,7 @@ func TestLoopbackIgnoresStateMismatch(t *testing.T) {
 func TestAuthEnvOverridesOnlyInDevBuilds(t *testing.T) {
 	cfg, _ := config.LoadFile(t.TempDir() + "/c.yaml")
 	cfg.Envs["onprem"] = &config.EnvConfig{Auth: config.EnvAuth{Domain: "auth.example.com", ClientID: "c"}}
-	t.Setenv("REEARTH_AUTH_DOMAIN", "https://evil.example")
+	envvartest.Fake(t, envvar.Map{"REEARTH_AUTH_DOMAIN": "https://evil.example"})
 	env, err := ResolveEnv(cfg, "onprem")
 	if err != nil || env.Domain != "https://evil.example" {
 		t.Fatalf("dev build: %+v (%v)", env, err)
@@ -226,9 +228,11 @@ func TestDeviceLogin(t *testing.T) {
 }
 
 func newTestManager(t *testing.T, fa *fakeAuth0) (*Manager, *config.Config) {
-	t.Setenv("REEARTH_AUTH_DOMAIN", fa.srv.URL)
-	t.Setenv("REEARTH_AUTH_CLIENT_ID", "cli")
-	t.Setenv("REEARTH_AUTH_AUDIENCE", "https://api.test")
+	envvartest.Fake(t, envvar.Map{
+		"REEARTH_AUTH_DOMAIN":    fa.srv.URL,
+		"REEARTH_AUTH_CLIENT_ID": "cli",
+		"REEARTH_AUTH_AUDIENCE":  "https://api.test",
+	})
 	cfg, err := config.LoadFile(t.TempDir() + "/config.yaml")
 	if err != nil {
 		t.Fatal(err)
@@ -238,7 +242,6 @@ func newTestManager(t *testing.T, fa *fakeAuth0) (*Manager, *config.Config) {
 	m := NewManager(cfg, "reearth")
 	m.Keyring = credstore.Memory()
 	m.LockDir = t.TempDir()
-	m.Getenv = func(string) string { return "" }
 	return m, cfg
 }
 
@@ -273,7 +276,7 @@ func TestSourceRefreshesAndPersistsRotatedToken(t *testing.T) {
 	// A new process (new manager) reuses the cached access token.
 	hits := fa.tokenHits.Load()
 	m2 := NewManager(cfg, "reearth")
-	m2.Keyring, m2.LockDir, m2.Getenv = m.Keyring, m.LockDir, m.Getenv
+	m2.Keyring, m2.LockDir = m.Keyring, m.LockDir
 	ts2, _ := m2.TokenSource(r)
 	if _, err := ts2.Token(); err != nil {
 		t.Fatal(err)
@@ -311,9 +314,8 @@ func TestResolveOrder(t *testing.T) {
 		cfg.Accounts[n] = &config.Account{Env: EnvProd, Kind: config.KindOAuth}
 	}
 	cfg.Active = "a"
-	env := map[string]string{}
+	env := envvartest.Fake(t, nil)
 	m := NewManager(cfg, "reearth")
-	m.Getenv = func(k string) string { return env[k] }
 	proj := &config.Project{Account: "c"}
 
 	check := func(flag string, p *config.Project, want, source string) {
@@ -343,39 +345,41 @@ func TestResolveOrder(t *testing.T) {
 }
 
 func TestDetectFlow(t *testing.T) {
-	mk := func(goos string, env map[string]string, files ...string) FlowEnv {
-		return FlowEnv{
-			GOOS:   goos,
-			Getenv: func(k string) string { return env[k] },
-			Exists: func(p string) bool {
-				for _, f := range files {
-					if f == p {
-						return true
+	mk := func(goos string, env envvar.Map, files ...string) func() FlowEnv {
+		return func() FlowEnv {
+			envvartest.Fake(t, env)
+			return FlowEnv{
+				GOOS: goos,
+				Exists: func(p string) bool {
+					for _, f := range files {
+						if f == p {
+							return true
+						}
 					}
-				}
-				return false
-			},
+					return false
+				},
+			}
 		}
 	}
 	cases := []struct {
 		name string
-		env  FlowEnv
+		env  func() FlowEnv
 		web  bool
 		dev  bool
 		want Flow
 	}{
 		{"mac", mk("darwin", nil), false, false, FlowLoopback},
-		{"ssh", mk("darwin", map[string]string{"SSH_CONNECTION": "x"}), false, false, FlowDevice},
-		{"forced web over ssh", mk("darwin", map[string]string{"SSH_CONNECTION": "x"}), true, false, FlowLoopback},
+		{"ssh", mk("darwin", envvar.Map{"SSH_CONNECTION": "x"}), false, false, FlowDevice},
+		{"forced web over ssh", mk("darwin", envvar.Map{"SSH_CONNECTION": "x"}), true, false, FlowLoopback},
 		{"forced device", mk("darwin", nil), false, true, FlowDevice},
-		{"linux desktop", mk("linux", map[string]string{"DISPLAY": ":0"}), false, false, FlowLoopback},
+		{"linux desktop", mk("linux", envvar.Map{"DISPLAY": ":0"}), false, false, FlowLoopback},
 		{"linux headless", mk("linux", nil), false, false, FlowDevice},
-		{"wsl", mk("linux", map[string]string{"WSL_DISTRO_NAME": "Ubuntu"}), false, false, FlowLoopback},
-		{"container", mk("linux", map[string]string{"DISPLAY": ":0"}, "/.dockerenv"), false, false, FlowDevice},
-		{"codespaces", mk("linux", map[string]string{"CODESPACES": "true", "DISPLAY": ":0"}), false, false, FlowDevice},
+		{"wsl", mk("linux", envvar.Map{"WSL_DISTRO_NAME": "Ubuntu"}), false, false, FlowLoopback},
+		{"container", mk("linux", envvar.Map{"DISPLAY": ":0"}, "/.dockerenv"), false, false, FlowDevice},
+		{"codespaces", mk("linux", envvar.Map{"CODESPACES": "true", "DISPLAY": ":0"}), false, false, FlowDevice},
 	}
 	for _, c := range cases {
-		if got := DetectFlow(c.env, c.web, c.dev); got != c.want {
+		if got := DetectFlow(c.env(), c.web, c.dev); got != c.want {
 			t.Errorf("%s: got %s, want %s", c.name, got, c.want)
 		}
 	}

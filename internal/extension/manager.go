@@ -312,7 +312,8 @@ func (m *Manager) Command(e *Entry, args []string, reearthBin string) (*exec.Cmd
 	}
 	cmd := exec.Command(e.Path, args...)
 	// The user's environment is inherited; REEARTH_EXTENSION marks calls back
-	// into the CLI as coming from an extension.
+	// into the CLI as coming from an extension. Passing the whole environment
+	// on is not a read, so it bypasses envvar.
 	cmd.Env = append(os.Environ(),
 		"REEARTH_EXTENSION=1",
 		"REEARTH_EXTENSION_NAME="+e.Name,

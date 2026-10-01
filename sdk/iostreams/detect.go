@@ -1,6 +1,6 @@
 package iostreams
 
-import "strings"
+import "github.com/reearth/cli/sdk/envvar"
 
 // agentEnvs maps environment variables set by coding agents to a display name.
 // When one is present, the CLI never prompts and suppresses decorative output.
@@ -14,30 +14,12 @@ var agentEnvs = []struct{ env, name string }{
 	{"AMP_AGENT", "amp"},
 }
 
-// ParseBool reads a boolean environment value: 1/true/yes/on or 0/false/no/off,
-// case-insensitively. ok is false for any other value, including "".
-func ParseBool(v string) (value, ok bool) {
-	switch strings.ToLower(strings.TrimSpace(v)) {
-	case "1", "true", "yes", "on":
-		return true, true
-	case "0", "false", "no", "off":
-		return false, true
-	}
-	return false, false
-}
-
-// EnvTrue reports whether v is a true boolean value (see ParseBool).
-func EnvTrue(v string) bool {
-	b, ok := ParseBool(v)
-	return ok && b
-}
-
 // DetectAgent returns the name of the coding agent driving this process, or "".
 // REEARTH_AGENT overrides detection: a false value disables it, a true value
 // enables it, and any other value is used as the agent's name.
-func DetectAgent(getenv func(string) string) string {
-	if v := getenv("REEARTH_AGENT"); v != "" {
-		if b, ok := ParseBool(v); ok {
+func DetectAgent() string {
+	if v := envvar.Get("REEARTH_AGENT"); v != "" {
+		if b, ok := envvar.Bool("REEARTH_AGENT"); ok {
 			if b {
 				return "agent"
 			}
@@ -46,7 +28,7 @@ func DetectAgent(getenv func(string) string) string {
 		return v
 	}
 	for _, a := range agentEnvs {
-		if getenv(a.env) != "" {
+		if envvar.Get(a.env) != "" {
 			return a.name
 		}
 	}
@@ -57,10 +39,10 @@ func DetectAgent(getenv func(string) string) string {
 var ciEnvs = []string{"CI", "GITHUB_ACTIONS", "BUILDKITE", "CIRCLECI", "GITLAB_CI", "JENKINS_URL", "TF_BUILD"}
 
 // DetectCI reports whether the process runs on a CI service.
-func DetectCI(getenv func(string) string) bool {
+func DetectCI() bool {
 	for _, k := range ciEnvs {
-		if v := getenv(k); v != "" {
-			if b, ok := ParseBool(v); !ok || b {
+		if envvar.Get(k) != "" {
+			if b, ok := envvar.Bool(k); !ok || b {
 				return true
 			}
 		}

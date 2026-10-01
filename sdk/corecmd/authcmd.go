@@ -2,7 +2,6 @@ package corecmd
 
 import (
 	"fmt"
-	"os"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -10,6 +9,7 @@ import (
 	"github.com/reearth/cli/sdk/auth"
 	"github.com/reearth/cli/sdk/cmdutil"
 	"github.com/reearth/cli/sdk/core"
+	"github.com/reearth/cli/sdk/envvar"
 	"github.com/reearth/cli/sdk/output"
 )
 
@@ -55,7 +55,7 @@ when any checked account needs to log in again.`,
 			}
 
 			var targets []*auth.Resolved
-			if f.Flags.Account != "" || f.IO.Getenv("REEARTH_TOKEN") != "" {
+			if f.Flags.Account != "" || envvar.Get("REEARTH_TOKEN") != "" {
 				r, err := f.Account()
 				if err != nil {
 					return err
@@ -158,7 +158,7 @@ It is refused when a coding agent is detected. Set REEARTH_AGENT=0 to override.
 It is refused when called from an extension (REEARTH_EXTENSION is set).`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if os.Getenv("REEARTH_EXTENSION") != "" {
+			if envvar.Get("REEARTH_EXTENSION") != "" {
 				return cmdutil.NewError(cmdutil.ExitError, "auth.token_refused_extension",
 					"refusing to print an access token to an extension",
 					"let the CLI make authenticated requests (e.g. `"+f.AppName+" api`)")

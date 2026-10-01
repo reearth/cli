@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"os"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -14,6 +13,7 @@ import (
 	"github.com/reearth/cli/sdk/config"
 	"github.com/reearth/cli/sdk/core"
 	"github.com/reearth/cli/sdk/credstore"
+	"github.com/reearth/cli/sdk/envvar"
 	"github.com/reearth/cli/sdk/output"
 )
 
@@ -141,7 +141,7 @@ func runChecks(ctx context.Context, f *core.Factory) []core.Check {
 			add(name, core.CheckOK, "credentials work", "")
 		}
 	}
-	if len(cfg.Accounts) == 0 && os.Getenv("REEARTH_TOKEN") == "" {
+	if len(cfg.Accounts) == 0 && envvar.Get("REEARTH_TOKEN") == "" {
 		add("accounts", core.CheckWarn, "no accounts", fmt.Sprintf("run `%s login`", f.AppName))
 	}
 	return checks

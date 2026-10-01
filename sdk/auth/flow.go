@@ -3,6 +3,8 @@ package auth
 import (
 	"os"
 	"runtime"
+
+	"github.com/reearth/cli/sdk/envvar"
 )
 
 type Flow int
@@ -21,17 +23,16 @@ func (f Flow) String() string {
 	return "loopback"
 }
 
-// FlowEnv abstracts the environment for DetectFlow (for tests).
+// FlowEnv abstracts the platform for DetectFlow (for tests). Environment
+// variables are read through envvar.
 type FlowEnv struct {
-	Getenv func(string) string
 	GOOS   string
 	Exists func(path string) bool
 }
 
-// SystemFlowEnv returns the real process environment.
+// SystemFlowEnv returns the real platform.
 func SystemFlowEnv() FlowEnv {
 	return FlowEnv{
-		Getenv: os.Getenv,
 		GOOS:   runtime.GOOS,
 		Exists: func(p string) bool { _, err := os.Stat(p); return err == nil },
 	}
@@ -47,26 +48,26 @@ func DetectFlow(e FlowEnv, forceWeb, forceDevice bool) Flow {
 		return FlowLoopback
 	}
 	for _, k := range []string{"SSH_CONNECTION", "SSH_CLIENT", "SSH_TTY"} {
-		if e.Getenv(k) != "" {
+		if envvar.Get(k) != "" {
 			return FlowDevice
 		}
 	}
 	// Remote dev environments: the browser runs elsewhere.
-	if e.Getenv("CODESPACES") == "true" || e.Getenv("GITPOD_WORKSPACE_ID") != "" || e.Getenv("REMOTE_CONTAINERS") == "true" {
+	if envvar.Get("CODESPACES") == "true" || envvar.Get("GITPOD_WORKSPACE_ID") != "" || envvar.Get("REMOTE_CONTAINERS") == "true" {
 		return FlowDevice
 	}
-	if e.Getenv("BROWSER") == "none" {
+	if envvar.Get("BROWSER") == "none" {
 		return FlowDevice
 	}
 	if e.GOOS == "linux" {
 		// WSL can open the Windows browser, and localhost is forwarded.
-		if e.Getenv("WSL_DISTRO_NAME") != "" {
+		if envvar.Get("WSL_DISTRO_NAME") != "" {
 			return FlowLoopback
 		}
 		if e.Exists != nil && (e.Exists("/.dockerenv") || e.Exists("/run/.containerenv")) {
 			return FlowDevice
 		}
-		if e.Getenv("DISPLAY") == "" && e.Getenv("WAYLAND_DISPLAY") == "" {
+		if envvar.Get("DISPLAY") == "" && envvar.Get("WAYLAND_DISPLAY") == "" {
 			return FlowDevice
 		}
 	}

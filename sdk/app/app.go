@@ -24,6 +24,7 @@ import (
 	"github.com/reearth/cli/sdk/cmdutil"
 	"github.com/reearth/cli/sdk/core"
 	"github.com/reearth/cli/sdk/corecmd"
+	"github.com/reearth/cli/sdk/envvar"
 	"github.com/reearth/cli/sdk/iostreams"
 	"github.com/reearth/cli/sdk/prompt"
 )
@@ -340,7 +341,7 @@ func applyGlobalFlags(f *core.Factory) error {
 	if g.Quiet {
 		f.IO.Quiet = true
 	}
-	if iostreams.EnvTrue(f.IO.Getenv("REEARTH_DEBUG")) {
+	if envvar.True("REEARTH_DEBUG") {
 		g.Debug = true
 	}
 	if v, _ := f.Setting("prompt"); v == "disabled" {

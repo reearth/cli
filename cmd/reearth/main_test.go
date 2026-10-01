@@ -12,6 +12,8 @@ import (
 
 	"github.com/reearth/cli/sdk/app"
 	"github.com/reearth/cli/sdk/cmdtree"
+	"github.com/reearth/cli/sdk/envvar"
+	"github.com/reearth/cli/sdk/envvar/envvartest"
 	"github.com/reearth/cli/sdk/iostreams"
 )
 
@@ -20,9 +22,11 @@ var updateGolden = flag.Bool("update", false, "rewrite testdata/commands.json fr
 func newRoot(t *testing.T) *cobra.Command {
 	t.Helper()
 	dir := t.TempDir()
-	t.Setenv("REEARTH_CONFIG_DIR", filepath.Join(dir, "config"))
-	t.Setenv("REEARTH_CACHE_DIR", filepath.Join(dir, "cache"))
-	t.Setenv("REEARTH_DATA_DIR", filepath.Join(dir, "data"))
+	envvartest.Fake(t, envvar.Map{
+		"REEARTH_CONFIG_DIR": filepath.Join(dir, "config"),
+		"REEARTH_CACHE_DIR":  filepath.Join(dir, "cache"),
+		"REEARTH_DATA_DIR":   filepath.Join(dir, "data"),
+	})
 	o := options()
 	ios, _, _, _ := iostreams.Test()
 	root := app.NewRoot(app.NewFactory(o, ios), o)

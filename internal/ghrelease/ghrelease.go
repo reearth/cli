@@ -16,6 +16,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"github.com/reearth/cli/sdk/envvar"
 )
 
 var ErrNotFound = errors.New("release not found")
@@ -51,9 +53,9 @@ type Client struct {
 }
 
 func New(userAgent string) *Client {
-	tok := os.Getenv("GH_TOKEN")
+	tok := envvar.Get("GH_TOKEN")
 	if tok == "" {
-		tok = os.Getenv("GITHUB_TOKEN")
+		tok = envvar.Get("GITHUB_TOKEN")
 	}
 	return &Client{
 		HTTP:      &http.Client{Timeout: 5 * time.Minute},
