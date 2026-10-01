@@ -3,6 +3,7 @@
 package docs
 
 import (
+	"errors"
 	"fmt"
 	"net/url"
 	"regexp"
@@ -12,7 +13,9 @@ import (
 // Page is one page of the documentation.
 type Page struct {
 	// ID names the page for `docs read`: the URL path when the file carries
-	// page URLs, otherwise the title, numbered when several pages share it.
+	// page URLs, otherwise the title. When several pages would share an ID,
+	// each of them is numbered. Numbers follow file order, so they can change
+	// when pages are added to the site.
 	ID          string `json:"id"`
 	Title       string `json:"title"`
 	URL         string `json:"url,omitempty"`
@@ -43,12 +46,12 @@ func Parse(text string) []Page {
 		}
 		body = nil
 	}
-	fence := ""
+	var open fence
 	for i := 0; i < len(lines); i++ {
 		l := lines[i]
-		if fence == "" {
-			if f := fenceOf(l); f != "" {
-				fence = f
+		if open.n == 0 {
+			if f, ok := openFence(l); ok {
+				open = f
 			} else if p, next, ok := pageHead(lines, i); ok {
 				flush()
 				pages = append(pages, p)
@@ -60,8 +63,8 @@ func Parse(text string) []Page {
 				}
 				continue
 			}
-		} else if strings.HasPrefix(strings.TrimSpace(l), fence) {
-			fence = ""
+		} else if open.closedBy(l) {
+			open = fence{}
 		}
 		body = append(body, l)
 	}
@@ -111,18 +114,59 @@ func skipBlank(lines []string, j int) int {
 	return j
 }
 
-func fenceOf(l string) string {
-	t := strings.TrimSpace(l)
-	for _, f := range []string{"```", "~~~"} {
-		if strings.HasPrefix(t, f) {
-			return f
-		}
-	}
-	return ""
+// fence is an open code fence: its character and length. The zero value
+// means no fence is open.
+type fence struct {
+	char byte
+	n    int
 }
 
+// openFence reports whether l opens a code fence, following CommonMark: three
+// or more backticks or tildes indented by at most three spaces. A line
+// indented further is indented code, not a fence.
+func openFence(l string) (fence, bool) {
+	t, ok := fenceIndent(l)
+	if !ok || t == "" || (t[0] != '`' && t[0] != '~') {
+		return fence{}, false
+	}
+	f := fence{char: t[0], n: runLen(t, t[0])}
+	if f.n < 3 || (f.char == '`' && strings.Contains(t[f.n:], "`")) {
+		return fence{}, false
+	}
+	return f, true
+}
+
+// closedBy reports whether l closes f: the same character, at least as many
+// of it, and nothing but whitespace after.
+func (f fence) closedBy(l string) bool {
+	t, ok := fenceIndent(l)
+	if !ok {
+		return false
+	}
+	n := runLen(t, f.char)
+	return n >= f.n && strings.TrimSpace(t[n:]) == ""
+}
+
+// fenceIndent strips up to three leading spaces and reports false when the
+// line is indented further.
+func fenceIndent(l string) (string, bool) {
+	t := strings.TrimLeft(l, " ")
+	return t, len(l)-len(t) <= 3 && !strings.HasPrefix(t, "\t")
+}
+
+func runLen(s string, c byte) int {
+	n := 0
+	for n < len(s) && s[n] == c {
+		n++
+	}
+	return n
+}
+
+// assignIDs names each page by its URL path, or by its title when the file
+// carries no URLs. Pages that would share an ID are all numbered ("FAQ (1)",
+// "FAQ (2)"), so no ID is a shared title and every ID names one page.
 func assignIDs(pages []Page) {
-	seen := map[string]int{}
+	count := map[string]int{}
 	for i := range pages {
 		p := &pages[i]
 		if u, err := url.Parse(p.URL); err == nil && p.URL != "" {
@@ -131,37 +175,90 @@ func assignIDs(pages []Page) {
 		if p.ID == "" {
 			p.ID = p.Title
 		}
-		seen[p.ID]++
-		if n := seen[p.ID]; n > 1 {
-			p.ID = fmt.Sprintf("%s (%d)", p.ID, n)
+		count[p.ID]++
+	}
+	taken := map[string]bool{}
+	for id, n := range count {
+		if n == 1 {
+			taken[id] = true
 		}
+	}
+	next := map[string]int{}
+	for i := range pages {
+		p := &pages[i]
+		if count[p.ID] == 1 {
+			continue
+		}
+		base := p.ID
+		for {
+			next[base]++
+			p.ID = fmt.Sprintf("%s (%d)", base, next[base])
+			if !taken[p.ID] {
+				break
+			}
+		}
+		taken[p.ID] = true
 	}
 }
 
-// Find returns the page named by ref: an ID, a unique title, or a page URL.
-func Find(pages []Page, ref string) (Page, bool) {
+// ErrNotFound is returned by Find when no page matches.
+var ErrNotFound = errors.New("no such page")
+
+// AmbiguousError is returned by Find when several pages share the title.
+type AmbiguousError struct {
+	Ref string
+	IDs []string
+}
+
+func (e *AmbiguousError) Error() string {
+	return fmt.Sprintf("%d pages are titled %q: %s", len(e.IDs), e.Ref, strings.Join(e.IDs, ", "))
+}
+
+// Find returns the page named by ref: an ID, a title, or a page URL or URL
+// path. IDs are unique and never a shared title, so an ID always resolves; a
+// title that several pages share is an *AmbiguousError listing their IDs. The
+// ref is tried verbatim first, so titles with slashes or that look like URLs
+// resolve too.
+func Find(pages []Page, ref string) (Page, error) {
 	ref = strings.TrimSpace(ref)
+	path := ref
 	if u, err := url.Parse(ref); err == nil && u.Host != "" {
-		ref = strings.Trim(u.Path, "/")
+		path = u.Path
 	}
-	ref = strings.Trim(ref, "/")
+	path = strings.Trim(path, "/")
+	p, err := find(pages, ref)
+	if errors.Is(err, ErrNotFound) && path != ref {
+		return find(pages, path)
+	}
+	return p, err
+}
+
+func find(pages []Page, ref string) (Page, error) {
 	var byTitle []Page
 	for _, p := range pages {
 		if p.ID == ref {
-			return p, true
+			return p, nil
 		}
 		if p.Title == ref {
 			byTitle = append(byTitle, p)
 		}
 	}
-	if len(byTitle) == 1 {
-		return byTitle[0], true
+	switch len(byTitle) {
+	case 0:
+		return Page{}, ErrNotFound
+	case 1:
+		return byTitle[0], nil
 	}
-	return Page{}, false
+	e := &AmbiguousError{Ref: ref}
+	for _, p := range byTitle {
+		e.IDs = append(e.IDs, p.ID)
+	}
+	return Page{}, e
 }
 
-// Markdown renders a page with its header. Site-relative links are made
-// absolute against site so that they can be followed.
+// Markdown renders a page with its header. Site-relative links outside code
+// (fenced, indented or inline) are made absolute against site so that they
+// can be followed.
 func (p Page) Markdown(site string) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "# %s\n\n", p.Title)
@@ -175,5 +272,103 @@ func (p Page) Markdown(site string) string {
 }
 
 func absoluteLinks(s, site string) string {
-	return strings.NewReplacer("](/", "]("+site+"/", `src="/`, `src="`+site+"/").Replace(s)
+	lines := strings.Split(s, "\n")
+	var open fence
+	indented := false // inside indented code
+	blank := true     // the previous line is blank; indented code cannot interrupt a paragraph
+	inList := false   // inside a list item, where indented lines continue the item
+	for i, l := range lines {
+		isBlank := strings.TrimSpace(l) == ""
+		line := l
+		if inList && codeIndent(l) {
+			// Fences in a list item are indented with it.
+			line = strings.TrimLeft(l, " \t")
+		}
+		switch {
+		case open.n > 0:
+			if open.closedBy(line) {
+				open = fence{}
+			}
+		case indented && (isBlank || codeIndent(l)), blank && !isBlank && !inList && codeIndent(l):
+			indented = true
+		default:
+			indented = false
+			f, isFence := openFence(line)
+			switch {
+			case listItem.MatchString(l):
+				inList = true
+			case !isBlank && !codeIndent(l) && (blank || isFence):
+				// A lazy continuation line stays in the item; anything else ends the list.
+				inList = false
+			}
+			if isFence {
+				open = f
+			} else {
+				lines[i] = absoluteLinksInLine(l, site)
+			}
+		}
+		blank = isBlank
+	}
+	return strings.Join(lines, "\n")
+}
+
+// listItem matches the start of a list item.
+var listItem = regexp.MustCompile(`^ {0,3}([-*+]|[0-9]{1,9}[.)])([ \t]|$)`)
+
+// codeIndent reports whether l is indented enough to be indented code: four
+// spaces or a tab. Inside a list item, such lines continue the item instead.
+func codeIndent(l string) bool {
+	t := strings.TrimLeft(l, " ")
+	return len(l)-len(t) >= 4 || strings.HasPrefix(t, "\t")
+}
+
+// siteRelative matches the start of a site-relative link target. A target
+// that starts with // is protocol-relative and left alone.
+var siteRelative = regexp.MustCompile(`(\]\(|src=")/([^/]|$)`)
+
+// absoluteLinksInLine rewrites site-relative links outside inline code spans.
+func absoluteLinksInLine(l, site string) string {
+	var b strings.Builder
+	text := 0 // start of the text not yet written
+	for i := 0; i < len(l); {
+		if l[i] != '`' {
+			i++
+			continue
+		}
+		n := runLen(l[i:], '`')
+		end := closingTicks(l, i+n, n)
+		if end < 0 {
+			i += n
+			continue
+		}
+		b.WriteString(rewriteLinks(l[text:i], site))
+		b.WriteString(l[i:end])
+		text, i = end, end
+	}
+	b.WriteString(rewriteLinks(l[text:], site))
+	return b.String()
+}
+
+func rewriteLinks(s, site string) string {
+	return siteRelative.ReplaceAllStringFunc(s, func(m string) string {
+		i := strings.IndexByte(m, '/')
+		return m[:i] + site + m[i:]
+	})
+}
+
+// closingTicks returns the index just past the next run of exactly n
+// backticks at or after from, or -1 when the code span is not closed.
+func closingTicks(l string, from, n int) int {
+	for i := from; i < len(l); {
+		if l[i] != '`' {
+			i++
+			continue
+		}
+		m := runLen(l[i:], '`')
+		if m == n {
+			return i + m
+		}
+		i += m
+	}
+	return -1
 }

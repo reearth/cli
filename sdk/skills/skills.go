@@ -1,6 +1,8 @@
 // Package skills renders the SKILL.md that `skills install` writes into agent
-// skill directories. It holds only rules that outlive a release; commands and
-// flags are left to `search` and `--help`, which always match the installed CLI.
+// skill directories. It holds only rules that outlive a release. It names no
+// product or command flags, only global ones that are part of the CLI's
+// stable contract (--json, --jq, --yes, --help); commands and their flags are
+// left to `search` and `--help`, which always match the installed CLI.
 package skills
 
 import (

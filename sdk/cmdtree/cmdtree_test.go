@@ -17,7 +17,7 @@ func tree() *cobra.Command {
 	create := &cobra.Command{Use: "create", Short: "Create an item", Run: run}
 	create.Flags().StringArray("field", nil, "Field value as key=value")
 	items.AddCommand(list, create)
-	models := &cobra.Command{Use: "models", Short: "Work with models"}
+	models := &cobra.Command{Use: "models", Short: "Define the fields that items have"}
 	models.AddCommand(&cobra.Command{Use: "list", Short: "List models", Run: run})
 	cms.AddCommand(items, models)
 	root.AddCommand(cms,
@@ -92,6 +92,70 @@ func TestLint(t *testing.T) {
 		if !found {
 			t.Errorf("missing %q in\n%s", want, strings.Join(got, "\n"))
 		}
+	}
+}
+
+func TestLintNamesOnly(t *testing.T) {
+	run := func(*cobra.Command, []string) {}
+	for _, c := range []struct {
+		group, short string
+		runnable     bool
+		reject       bool
+	}{
+		{"records", "Operations for records", true, true},
+		{"records", "Records commands", false, true},
+		{"records", "Manage dns", false, true},
+		{"records", "Manage DNS records", false, true},
+		{"records", "Work with the record", true, true},
+		{"entries", "Manage entries", false, true},
+		{"rec", "Manage records", false, true}, // an alias is a name too
+		{"records", "Add, list and delete the records of a zone", false, false},
+		{"list", "List dns", true, false},
+		{"list", "List records", true, false},
+	} {
+		root := &cobra.Command{Use: "reearth", Short: "Work with Re:Earth"}
+		dns := &cobra.Command{Use: "dns", Short: "Point domain names at hosts"}
+		use, aliases := c.group, []string(nil)
+		if use == "rec" {
+			use, aliases = "records", []string{"rec"}
+		}
+		cmd := &cobra.Command{Use: use, Aliases: aliases, Short: c.short}
+		if c.runnable {
+			cmd.Run = run
+		} else {
+			cmd.AddCommand(&cobra.Command{Use: "add", Short: "Add a record to a zone", Run: run})
+		}
+		dns.AddCommand(cmd)
+		root.AddCommand(dns)
+		errs := Lint(Walk(root))
+		if got := len(errs) > 0; got != c.reject {
+			t.Errorf("%s %q: rejected = %v, want %v (%v)", use, c.short, got, c.reject, errs)
+		}
+	}
+}
+
+func TestInitDefaults(t *testing.T) {
+	root := tree()
+	root.Version = "1.0.0"
+	InitDefaults(root)
+	cmds := Walk(root)
+	var paths []string
+	for _, c := range cmds {
+		paths = append(paths, c.Path)
+	}
+	if got := strings.Join(paths, "|"); !strings.Contains(got, "|reearth completion|reearth completion bash|") || strings.Contains(got, "help") {
+		t.Errorf("paths = %s", got)
+	}
+	found := false
+	for _, f := range cmds[0].Flags {
+		found = found || f.Name == "version"
+	}
+	if !found {
+		t.Errorf("root flags = %+v", cmds[0].Flags)
+	}
+	// cobra's text, such as "version for reearth", is not ours to lint.
+	if errs := Lint(cmds); len(errs) != 0 {
+		t.Errorf("lint of cobra's commands: %v", errs)
 	}
 }
 

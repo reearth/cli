@@ -23,6 +23,7 @@ matches with a one-line summary. Run "<command> --help" on a match for its flags
   $ reearth search "check whether my login still works" --json`,
 		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			cmdtree.InitDefaults(cmd.Root())
 			matches := cmdtree.Search(cmdtree.Walk(cmd.Root()), strings.Join(args, " "), limit)
 			p, err := f.Printer()
 			if err != nil {

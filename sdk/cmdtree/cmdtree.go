@@ -28,6 +28,8 @@ type Command struct {
 	// parents holds the Short and Long of each ancestor below the root, so that
 	// a group's description of its concepts leads search to its commands.
 	parents []string
+	// fromCobra marks cobra's completion command and its subcommands.
+	fromCobra bool
 }
 
 // Flag is a local flag of a command. Global flags are listed on the root only.
@@ -37,23 +39,35 @@ type Flag struct {
 	Type      string `json:"type"`
 	Default   string `json:"default,omitempty"`
 	Usage     string `json:"usage"`
+	// fromCobra marks a flag that cobra adds, such as --version.
+	fromCobra bool
+}
+
+// InitDefaults adds what cobra otherwise adds only when a command runs: the
+// help and completion commands and the --help and --version flags of the root.
+// Call it before Walk, so that a tree built in a test and the tree of a
+// running command are walked alike.
+func InitDefaults(root *cobra.Command) {
+	root.InitDefaultHelpCmd()
+	root.InitDefaultCompletionCmd()
+	root.InitDefaultHelpFlag()
+	root.InitDefaultVersionFlag()
 }
 
 // Walk lists the visible commands under root in tree order, root included.
 // Hidden commands, their subcommands and cobra's help command are skipped.
+// The flags listed on the root include the global flags.
 func Walk(root *cobra.Command) []Command {
 	var cmds []Command
-	var walk func(c *cobra.Command, parents []string)
-	walk = func(c *cobra.Command, parents []string) {
+	var walk func(c *cobra.Command, parents []string, fromCobra bool)
+	walk = func(c *cobra.Command, parents []string, fromCobra bool) {
 		if c.Hidden || c.Name() == "help" {
 			return
 		}
+		// cobra adds "completion" unless the root has a command of that name.
+		fromCobra = fromCobra || c.Parent() == root && c.Name() == "completion"
 		fs := c.LocalNonPersistentFlags()
-		if c == root {
-			fs = c.PersistentFlags()
-		} else {
-			fs.AddFlagSet(c.PersistentFlags())
-		}
+		fs.AddFlagSet(c.PersistentFlags())
 		usage := c.UseLine()
 		topic := c.IsAdditionalHelpTopicCommand()
 		if topic {
@@ -69,15 +83,17 @@ func Walk(root *cobra.Command) []Command {
 			Topic:    topic,
 			Flags:    flags(fs),
 			parents:  parents,
+
+			fromCobra: fromCobra,
 		})
 		if c != root {
 			parents = append(parents[:len(parents):len(parents)], c.Short, c.Long)
 		}
 		for _, sub := range c.Commands() {
-			walk(sub, parents)
+			walk(sub, parents, fromCobra)
 		}
 	}
-	walk(root, nil)
+	walk(root, nil, false)
 	return cmds
 }
 
@@ -93,6 +109,7 @@ func flags(fs *pflag.FlagSet) []Flag {
 			Type:      f.Value.Type(),
 			Default:   defaultValue(f),
 			Usage:     f.Usage,
+			fromCobra: f.Annotations[cobra.FlagSetByCobraAnnotation] != nil,
 		})
 	})
 	return out

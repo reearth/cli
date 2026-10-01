@@ -1,6 +1,7 @@
 package corecmd
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -30,7 +31,7 @@ and APIs.
 
 The documentation is in Japanese; search in Japanese for the best results.
 It is downloaded once and cached, and checked for changes at most once an hour.
-When the site cannot be reached, the cached copy is used.
+When a download fails, the cached copy is used with a warning.
 
 To find a command of this CLI, use "search" instead.`,
 	}
@@ -85,8 +86,12 @@ func newCmdDocsRead(f *core.Factory) *cobra.Command {
 		Short: "Print a documentation page as Markdown",
 		Long: `Print a documentation page as Markdown.
 
-<id> is an id from "docs search", a page title, or a page URL. Links to other
-pages are absolute, so they can be followed.`,
+<id> is an id from "docs search" or a page title. When the site publishes page
+URLs, ids are URL paths and a page URL works too. Otherwise ids are titles, and
+pages that share a title get numbered ids, such as "概要 (1)" and "概要 (2)". A
+title that several pages share is ambiguous: the command exits with 2 and
+lists their ids. Links to other pages are absolute,
+so they can be followed.`,
 		Example: `  $ reearth docs read "参照フィールドでモデルどうしをつなぐ"`,
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -94,8 +99,16 @@ pages are absolute, so they can be followed.`,
 			if err != nil {
 				return err
 			}
-			page, ok := docs.Find(pages, args[0])
-			if !ok {
+			page, err := docs.Find(pages, args[0])
+			if ae := (*docs.AmbiguousError)(nil); errors.As(err, &ae) {
+				return &cmdutil.Error{
+					Exit:    cmdutil.ExitUsage,
+					Code:    "docs.ambiguous",
+					Message: ae.Error(),
+					Hint:    fmt.Sprintf("pass one of the ids, such as `%s docs read %q`", f.AppName, ae.IDs[0]),
+				}
+			}
+			if err != nil {
 				return &cmdutil.Error{
 					Exit:    cmdutil.ExitNotFound,
 					Code:    "docs.not_found",
@@ -135,19 +148,29 @@ func loadDocs(cmd *cobra.Command, f *core.Factory) ([]docs.Page, error) {
 		MaxAge: docsMaxAge,
 	}
 	f.IO.StartProgress("Loading the documentation…")
-	pages, stale, err := src.Load(cmd.Context())
+	pages, warn, err := src.Load(cmd.Context())
 	f.IO.StopProgress()
 	if err != nil {
+		hint := "check the network, or set REEARTH_DOCS_URL"
+		if se := (*docs.StatusError)(nil); errors.As(err, &se) || errors.Is(err, docs.ErrNoPages) {
+			hint = "the site may be down; try again later"
+			if os.Getenv("REEARTH_DOCS_URL") != "" {
+				hint = "check that REEARTH_DOCS_URL points at a Re:Earth documentation site"
+			}
+		}
 		return nil, &cmdutil.Error{
 			Exit:    cmdutil.ExitError,
 			Code:    "docs.unavailable",
-			Message: "could not download the documentation: " + err.Error(),
-			Hint:    "check the network, or set REEARTH_DOCS_URL",
+			Message: "could not load the documentation: " + err.Error(),
+			Hint:    hint,
 			Err:     err,
 		}
 	}
-	if stale {
-		f.IO.Warn("Could not reach %s; using the cached documentation", src.Site)
+	if se := (*docs.StaleError)(nil); errors.As(warn, &se) {
+		f.IO.Warn("Using the cached documentation: %v", se.Err)
+	}
+	if ce := (*docs.CacheError)(nil); errors.As(warn, &ce) {
+		f.IO.Warn("Could not save the documentation cache: %v", ce.Err)
 	}
 	return pages, nil
 }

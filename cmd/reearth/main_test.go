@@ -25,11 +25,14 @@ func newRoot(t *testing.T) *cobra.Command {
 	t.Setenv("REEARTH_DATA_DIR", filepath.Join(dir, "data"))
 	o := options()
 	ios, _, _, _ := iostreams.Test()
-	return app.NewRoot(app.NewFactory(o, ios), o)
+	root := app.NewRoot(app.NewFactory(o, ios), o)
+	cmdtree.InitDefaults(root)
+	return root
 }
 
-// TestCommandSurface pins every command, argument and flag of the distributed
-// binary. A diff in testdata/commands.json shows reviewers what a change adds,
+// TestCommandSurface pins every command, alias, argument and flag of the
+// distributed binary, including the completion command and --version that
+// cobra adds. A diff in testdata/commands.json shows reviewers what a change adds,
 // renames or removes; renaming or removing breaks users' scripts.
 // Run `make golden` after an intended change.
 func TestCommandSurface(t *testing.T) {

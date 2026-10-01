@@ -48,6 +48,12 @@
         "usage": "Only print data, warnings and errors"
       },
       {
+        "name": "version",
+        "shorthand": "v",
+        "type": "bool",
+        "usage": "version for reearth"
+      },
+      {
         "name": "yes",
         "shorthand": "y",
         "type": "bool",
@@ -471,5 +477,63 @@
     "short": "Environment variables the CLI reads",
     "runnable": false,
     "topic": true
+  },
+  {
+    "path": "reearth completion",
+    "usage": "reearth completion [flags]",
+    "short": "Generate the autocompletion script for the specified shell",
+    "runnable": false
+  },
+  {
+    "path": "reearth completion bash",
+    "usage": "reearth completion bash",
+    "short": "Generate the autocompletion script for bash",
+    "runnable": true,
+    "flags": [
+      {
+        "name": "no-descriptions",
+        "type": "bool",
+        "usage": "disable completion descriptions"
+      }
+    ]
+  },
+  {
+    "path": "reearth completion zsh",
+    "usage": "reearth completion zsh [flags]",
+    "short": "Generate the autocompletion script for zsh",
+    "runnable": true,
+    "flags": [
+      {
+        "name": "no-descriptions",
+        "type": "bool",
+        "usage": "disable completion descriptions"
+      }
+    ]
+  },
+  {
+    "path": "reearth completion fish",
+    "usage": "reearth completion fish [flags]",
+    "short": "Generate the autocompletion script for fish",
+    "runnable": true,
+    "flags": [
+      {
+        "name": "no-descriptions",
+        "type": "bool",
+        "usage": "disable completion descriptions"
+      }
+    ]
+  },
+  {
+    "path": "reearth completion powershell",
+    "usage": "reearth completion powershell [flags]",
+    "short": "Generate the autocompletion script for powershell",
+    "runnable": true,
+    "flags": [
+      {
+        "name": "no-descriptions",
+        "type": "bool",
+        "usage": "disable completion descriptions"
+      }
+    ]
   }
 ]
