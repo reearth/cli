@@ -25,7 +25,11 @@ asset named reearth-<name>-<os>-<arch> (with .exe on Windows).
 Security model:
   - Only extensions installed here are run. reearth-* binaries on PATH are never run.
   - The SHA-256 of the binary is recorded at install time and checked before every run.
-  - Extensions do not receive credentials. To call an API, they run "$REEARTH_BIN api".
+  - Extensions are not sandboxed: they run with your user's access, like any
+    program you run. Install only extensions you trust.
+  - The CLI does not hand extensions the credentials it stores. They inherit your
+    environment variables, including REEARTH_TOKEN. To call an API, they run
+    "$REEARTH_BIN api". REEARTH_EXTENSION=1 marks calls coming from an extension.
   - Extensions from owners other than "reearth" are marked third-party.
   - Built-in command names cannot be taken by extensions.
   - When a coding agent is detected, extensions run only through "ext exec".`,
@@ -45,7 +49,7 @@ func confirmPlan(f *core.Factory, p *Plan, verb string) error {
 	if p.Checksum != "" {
 		f.IO.Println("  " + cs.SuccessIcon() + " checksum published: " + cs.Dim(p.Checksum))
 	} else {
-		f.IO.Println("  " + cs.WarningIcon() + " the release publishes no checksums file")
+		f.IO.Println("  " + cs.WarningIcon() + " the release publishes no checksums file" + cs.Dim(" — the download cannot be verified"))
 	}
 	f.IO.Println("  " + cs.Dim(p.URL))
 	f.IO.Newline()
@@ -177,8 +181,14 @@ func newCmdRemove(f *core.Factory, m *Manager) *cobra.Command {
 		Short:   "Remove an extension",
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if _, ok := m.Get(args[0]); !ok {
+				return cmdutil.NotFoundf("extension %q is not installed", args[0])
+			}
+			if err := f.Confirm(fmt.Sprintf("Remove %s?", args[0])); err != nil {
+				return err
+			}
 			if err := m.Remove(args[0]); err != nil {
-				return cmdutil.NotFoundf("%s", err.Error())
+				return err
 			}
 			f.IO.Success("Removed %s", args[0])
 			return nil
@@ -237,7 +247,7 @@ func Run(f *core.Factory, m *Manager, e *Entry, args []string) (int, error) {
 // is not a built-in command. Agents must use `ext exec` explicitly.
 func Dispatch(m *Manager) func(f *core.Factory, root *cobra.Command, args []string) (bool, int) {
 	return func(f *core.Factory, root *cobra.Command, args []string) (bool, int) {
-		if len(args) == 0 || len(args[0]) == 0 || args[0][0] == '-' {
+		if len(args) == 0 || len(args[0]) == 0 || args[0][0] == '-' || cobraBuiltins[args[0]] {
 			return false, 0
 		}
 		if c, _, err := root.Find(args[:1]); err == nil && c != root {

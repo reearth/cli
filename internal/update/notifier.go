@@ -6,15 +6,16 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"golang.org/x/mod/semver"
 
 	"github.com/reearth/cli/internal/ghrelease"
+	"github.com/reearth/cli/sdk/app"
 	"github.com/reearth/cli/sdk/build"
 	"github.com/reearth/cli/sdk/config"
 	"github.com/reearth/cli/sdk/core"
+	"github.com/reearth/cli/sdk/iostreams"
 )
 
 const checkInterval = 24 * time.Hour
@@ -53,8 +54,9 @@ type Notifier struct {
 	done chan struct{}
 }
 
-// machineArgs are flags after which stderr is probably parsed too.
-var machineArgs = []string{"--json", "--jq", "-o", "--output", "--quiet", "-q"}
+// machineFlags are flags after which stderr is probably parsed too, as
+// long and short names.
+var machineFlags = [][2]string{{"json", ""}, {"jq", ""}, {"output", "o"}, {"quiet", "q"}}
 
 // Start begins a background check if notifications are appropriate.
 func Start(f *core.Factory, args []string) *Notifier {
@@ -71,41 +73,69 @@ func Start(f *core.Factory, args []string) *Notifier {
 		defer close(n.done)
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		rel, err := ghrelease.New(build.UserAgent(f.AppName)).Latest(ctx, Repo)
-		if err != nil {
-			return
-		}
-		_ = writeState(&state{CheckedAt: time.Now(), Latest: rel.TagName, URL: rel.HTMLURL})
+		check(ctx, newClient(build.UserAgent(f.AppName)), s)
 	}()
 	return n
 }
 
+// check records the latest release. The time is recorded before the request,
+// keeping any previously known release, so that a failed check (no releases
+// yet, no network) or one killed when the process exits is not retried on
+// every run.
+func check(ctx context.Context, gh *ghrelease.Client, prev *state) {
+	s := &state{}
+	if prev != nil {
+		*s = *prev
+	}
+	s.CheckedAt = time.Now()
+	_ = writeState(s)
+	if rel, err := gh.Latest(ctx, Repo); err == nil {
+		s.Latest, s.URL = rel.TagName, rel.HTMLURL
+		_ = writeState(s)
+	}
+}
+
 func enabled(f *core.Factory, args []string) bool {
-	if build.IsDev() || !f.IO.IsInteractive() || os.Getenv("REEARTH_NO_UPDATE_NOTIFIER") != "" {
+	if build.IsDev() || !f.IO.IsInteractive() || iostreams.EnvTrue(os.Getenv("REEARTH_NO_UPDATE_NOTIFIER")) {
 		return false
 	}
 	if len(args) > 0 && (args[0] == "upgrade" || args[0] == "__complete" || args[0] == "completion") {
 		return false
 	}
-	for _, a := range args {
-		for _, m := range machineArgs {
-			if a == m || strings.HasPrefix(a, m+"=") {
-				return false
-			}
-		}
+	if machineArgs(args) {
+		return false
 	}
-	if cfg, err := f.Config(); err == nil {
-		if v, _, _ := cfg.Get("update_check"); v == "disabled" {
-			return false
-		}
+	if v, _ := f.Setting("update_check"); v == "disabled" {
+		return false
 	}
 	return true
+}
+
+// machineArgs reports whether raw args request machine output or quiet mode
+// in any spelling (--json, --json=f, --output=json, -o json, -ojson, -o=json,
+// -q, -yojson). Parsing may have failed, so the parsed flags cannot be relied
+// on alone.
+func machineArgs(args []string) bool {
+	for _, m := range machineFlags {
+		var short []string
+		if m[1] != "" {
+			short = []string{m[1]}
+		}
+		if _, ok := app.RawFlag(args, m[0], short...); ok {
+			return true
+		}
+	}
+	return false
 }
 
 // Notify prints the notice if a newer version is known. It waits briefly for
 // an in-flight check so that the first run after the interval can report.
 func (n *Notifier) Notify(f *core.Factory) {
 	if n == nil {
+		return
+	}
+	// The parsed flags also catch combined shorthands such as -yq.
+	if g := f.Flags; g != nil && (g.Output.JSON != "" || g.Output.JQ != "" || g.Output.Output != "" || g.Quiet) {
 		return
 	}
 	select {

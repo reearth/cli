@@ -2,10 +2,16 @@
 // releases (like `gh extension`).
 //
 // Unlike cargo/git, binaries named reearth-* on PATH are never executed
-// implicitly. Only extensions installed through this manager run, their
-// SHA-256 is pinned in a lock file and re-verified before every run, and no
-// credentials are passed to them: an extension that needs the API calls
-// `$REEARTH_BIN api ...`.
+// implicitly. Only extensions installed through this manager run, and their
+// SHA-256 is pinned in a lock file and re-verified before every run.
+//
+// Extensions are not sandboxed. They run with the user's own access, like any
+// process the user starts, and inherit environment variables, including
+// REEARTH_TOKEN. The CLI does not hand them the credentials it stores (keyring
+// or file); an extension that needs the API calls `$REEARTH_BIN api ...`.
+// REEARTH_EXTENSION=1 is how the CLI recognises a call from an extension. None
+// of this stops a malicious extension, which could read the keyring itself:
+// users are protected by installing only extensions they trust.
 package extension
 
 import (
@@ -21,6 +27,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/spf13/cobra"
 
 	"github.com/reearth/cli/internal/ghrelease"
 	"github.com/reearth/cli/sdk/config"
@@ -145,7 +153,8 @@ type Plan struct {
 	Tag      string
 	Official bool
 	Asset    *ghrelease.Asset
-	// Checksum is the expected SHA-256 from the release's checksums file, if any.
+	// Checksum is the expected SHA-256 from the release's checksums files;
+	// empty only when the release publishes none.
 	Checksum string
 	URL      string
 }
@@ -165,7 +174,7 @@ func (m *Manager) PlanInstall(ctx context.Context, repoArg, tag string) (*Plan, 
 	if err != nil {
 		return nil, err
 	}
-	if m.Reserved != nil && m.Reserved(name) {
+	if m.reserved(name) {
 		return nil, fmt.Errorf("%q is a built-in command and cannot be used as an extension name", name)
 	}
 	full := owner + "/" + repo
@@ -187,20 +196,44 @@ func (m *Manager) PlanInstall(ctx context.Context, repoArg, tag string) (*Plan, 
 		return nil, fmt.Errorf("%s %s has no binary for %s/%s (expected asset %s)", full, rel.TagName, runtime.GOOS, runtime.GOARCH, an)
 	}
 	p := &Plan{Name: name, Repo: full, Tag: rel.TagName, Official: strings.EqualFold(owner, OfficialOwner), Asset: asset, URL: rel.HTMLURL}
+	// Once a release publishes checksums, the asset must be listed, and every
+	// file that lists it must agree. Only a release without any checksums file
+	// installs unverified (after confirmation).
+	published := false
 	for i := range rel.Assets {
 		a := &rel.Assets[i]
-		if a.Name == "checksums.txt" || strings.HasSuffix(a.Name, "_checksums.txt") || strings.HasSuffix(a.Name, "-checksums.txt") {
-			sums, err := m.GH.Checksums(ctx, a)
-			if err != nil {
-				return nil, fmt.Errorf("read checksums: %w", err)
-			}
-			if c, ok := sums[an]; ok {
-				p.Checksum = c
-			}
-			break
+		if a.Name != "checksums.txt" && !strings.HasSuffix(a.Name, "_checksums.txt") && !strings.HasSuffix(a.Name, "-checksums.txt") {
+			continue
 		}
+		published = true
+		sums, err := m.GH.Checksums(ctx, a)
+		if err != nil {
+			return nil, fmt.Errorf("read checksums: %w", err)
+		}
+		c, ok := sums[an]
+		if !ok {
+			continue
+		}
+		if p.Checksum != "" && c != p.Checksum {
+			return nil, fmt.Errorf("%s %s publishes conflicting checksums for %s", full, rel.TagName, an)
+		}
+		p.Checksum = c
+	}
+	if published && p.Checksum == "" {
+		return nil, fmt.Errorf("%s %s publishes checksums but none for %s; refusing to install an unverified binary", full, rel.TagName, an)
 	}
 	return p, nil
+}
+
+// cobraBuiltins are commands cobra adds lazily inside Execute, so a lookup on
+// the root command does not see them yet.
+var cobraBuiltins = map[string]bool{
+	"help": true, "completion": true,
+	cobra.ShellCompRequestCmd: true, cobra.ShellCompNoDescRequestCmd: true,
+}
+
+func (m *Manager) reserved(name string) bool {
+	return cobraBuiltins[name] || (m.Reserved != nil && m.Reserved(name))
 }
 
 // Install downloads the planned binary, verifies it and records it in the lock file.
@@ -278,6 +311,8 @@ func (m *Manager) Command(e *Entry, args []string, reearthBin string) (*exec.Cmd
 		return nil, fmt.Errorf("%w: %s (reinstall with `reearth ext install %s`)", ErrTampered, e.Path, e.Repo)
 	}
 	cmd := exec.Command(e.Path, args...)
+	// The user's environment is inherited; REEARTH_EXTENSION marks calls back
+	// into the CLI as coming from an extension.
 	cmd.Env = append(os.Environ(),
 		"REEARTH_EXTENSION=1",
 		"REEARTH_EXTENSION_NAME="+e.Name,

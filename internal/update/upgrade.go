@@ -29,6 +29,9 @@ type checkJSON struct {
 	URL             string `json:"url,omitempty"`
 }
 
+// newClient is replaced in tests.
+var newClient = ghrelease.New
+
 func NewCmdUpgrade(f *core.Factory) *cobra.Command {
 	var (
 		check   bool
@@ -48,7 +51,7 @@ apt, ...), the command prints how to upgrade with it instead.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
-			gh := ghrelease.New(build.UserAgent(f.AppName))
+			gh := newClient(build.UserAgent(f.AppName))
 			exe, err := Executable()
 			if err != nil {
 				return err
@@ -88,7 +91,8 @@ apt, ...), the command prints how to upgrade with it instead.`,
 				})
 			}
 
-			if !available && version == "" && !force {
+			// A dev build always falls through to the dev_build guard.
+			if !available && version == "" && !force && !build.IsDev() {
 				f.IO.Success("Already up to date (%s)", normalize(build.Version))
 				return nil
 			}
@@ -265,7 +269,7 @@ func DoctorCheck(appName string) func(ctx context.Context) []core.Check {
 		}
 		m := DetectMethod(exe)
 		checks := []core.Check{{Name: "install", Status: core.CheckOK, Detail: fmt.Sprintf("%s (%s)", exe, m.Name)}}
-		if s, err := readState(); err == nil && Newer(s.Latest, build.Version) {
+		if s, err := readState(); err == nil && !build.IsDev() && Newer(s.Latest, build.Version) {
 			hint := "run `" + appName + " upgrade`"
 			if !m.Self {
 				hint = "run `" + m.Command + "`"

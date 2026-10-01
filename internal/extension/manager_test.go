@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -12,7 +13,12 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/spf13/cobra"
+
 	"github.com/reearth/cli/internal/ghrelease"
+	"github.com/reearth/cli/sdk/cmdutil"
+	"github.com/reearth/cli/sdk/core"
+	"github.com/reearth/cli/sdk/iostreams"
 )
 
 func TestParseRepo(t *testing.T) {
@@ -34,21 +40,35 @@ func TestParseRepo(t *testing.T) {
 	}
 }
 
+var toolAsset = AssetName("tool", runtime.GOOS, runtime.GOARCH)
+
 // fakeGitHub serves one release of someone/reearth-tool with a binary and checksums.
 func fakeGitHub(t *testing.T, bin []byte, checksum string) *httptest.Server {
-	asset := AssetName("tool", runtime.GOOS, runtime.GOARCH)
+	return fakeGitHubFiles(t, bin, []sumsFile{{"checksums.txt", fmt.Sprintf("%s  %s\n", checksum, toolAsset)}})
+}
+
+type sumsFile struct{ name, content string }
+
+// fakeGitHubFiles serves one release of someone/reearth-tool with a binary and
+// the given checksums files, listed as assets in this order.
+func fakeGitHubFiles(t *testing.T, bin []byte, sums []sumsFile) *httptest.Server {
+	byName := map[string]string{}
+	for _, f := range sums {
+		byName[f.name] = f.content
+	}
 	var srv *httptest.Server
 	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/repos/someone/reearth-tool/releases/latest":
-			_ = json.NewEncoder(w).Encode(ghrelease.Release{TagName: "v1.0.0", Assets: []ghrelease.Asset{
-				{Name: asset, URL: srv.URL + "/dl/bin"},
-				{Name: "checksums.txt", URL: srv.URL + "/dl/sums"},
-			}})
-		case "/dl/bin":
+		switch {
+		case r.URL.Path == "/repos/someone/reearth-tool/releases/latest":
+			assets := []ghrelease.Asset{{Name: toolAsset, URL: srv.URL + "/dl/bin"}}
+			for _, f := range sums {
+				assets = append(assets, ghrelease.Asset{Name: f.name, URL: srv.URL + "/sums/" + f.name})
+			}
+			_ = json.NewEncoder(w).Encode(ghrelease.Release{TagName: "v1.0.0", Assets: assets})
+		case r.URL.Path == "/dl/bin":
 			_, _ = w.Write(bin)
-		case "/dl/sums":
-			_, _ = fmt.Fprintf(w, "%s  %s\n", checksum, asset)
+		case strings.HasPrefix(r.URL.Path, "/sums/"):
+			_, _ = w.Write([]byte(byName[strings.TrimPrefix(r.URL.Path, "/sums/")]))
 		default:
 			http.NotFound(w, r)
 		}
@@ -106,10 +126,103 @@ func TestInstallRejectsChecksumMismatch(t *testing.T) {
 	}
 }
 
+func TestPlanChecksums(t *testing.T) {
+	bin := []byte("binary")
+	sum, _ := sha256Hex(bin)
+	wrong := strings.Repeat("0", 64)
+	line := func(s string) string { return fmt.Sprintf("%s  %s\n", s, toolAsset) }
+	cases := []struct {
+		name    string
+		sums    []sumsFile
+		wantErr string
+	}{
+		{"no checksums file", nil, ""},
+		// The file without the binary comes first, so checking only the first file fails.
+		{"listed in one of several", []sumsFile{{"other_checksums.txt", wrong + "  other\n"}, {"checksums.txt", line(sum)}}, ""},
+		{"not listed", []sumsFile{{"checksums.txt", wrong + "  other\n"}}, "none for"},
+		{"conflicting files", []sumsFile{{"checksums.txt", line(sum)}, {"x-checksums.txt", line(wrong)}}, "conflicting"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			m := newTestManager(t, fakeGitHubFiles(t, bin, c.sums))
+			p, err := m.PlanInstall(context.Background(), "someone/reearth-tool", "")
+			if c.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), c.wantErr) {
+					t.Fatalf("err = %v, want %q", err, c.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := sum
+			if c.sums == nil {
+				want = ""
+			}
+			if p.Checksum != want {
+				t.Fatalf("checksum = %q, want %q", p.Checksum, want)
+			}
+		})
+	}
+}
+
 func TestReservedNames(t *testing.T) {
 	m := &Manager{Dir: t.TempDir(), GH: ghrelease.New("test"), Reserved: func(n string) bool { return n == "login" }}
-	if _, err := m.PlanInstall(context.Background(), "someone/reearth-login", ""); err == nil || !strings.Contains(err.Error(), "built-in") {
+	for _, n := range []string{"login", "help", "completion"} {
+		if _, err := m.PlanInstall(context.Background(), "someone/reearth-"+n, ""); err == nil || !strings.Contains(err.Error(), "built-in") {
+			t.Fatalf("%s: err = %v", n, err)
+		}
+	}
+}
+
+func testFactory() *core.Factory {
+	ios, _, _, _ := iostreams.Test()
+	return &core.Factory{AppName: "reearth", IO: ios, Flags: &core.GlobalFlags{}}
+}
+
+func TestDispatchSkipsCobraBuiltins(t *testing.T) {
+	m := &Manager{Dir: t.TempDir()}
+	lf := &lockFile{Version: 1, Extensions: map[string]*Entry{}}
+	for n := range cobraBuiltins {
+		lf.Extensions[n] = &Entry{Name: n, Path: "/nonexistent"}
+	}
+	if err := m.save(lf); err != nil {
+		t.Fatal(err)
+	}
+	root := &cobra.Command{Use: "reearth"}
+	for n := range cobraBuiltins {
+		if handled, _ := Dispatch(m)(testFactory(), root, []string{n}); handled {
+			t.Errorf("%s was dispatched to an extension", n)
+		}
+	}
+}
+
+func TestRemoveRequiresConfirmation(t *testing.T) {
+	m := &Manager{Dir: t.TempDir()}
+	if err := m.save(&lockFile{Version: 1, Extensions: map[string]*Entry{"tool": {Name: "tool"}}}); err != nil {
+		t.Fatal(err)
+	}
+	run := func(f *core.Factory) error {
+		cmd := newCmdRemove(f, m)
+		cmd.SetArgs([]string{"tool"})
+		cmd.SetOut(io.Discard)
+		cmd.SetErr(io.Discard)
+		return cmd.Execute()
+	}
+	var e *cmdutil.Error
+	if err := run(testFactory()); !errors.As(err, &e) || e.Code != "confirmation_required" {
 		t.Fatalf("err = %v", err)
+	}
+	if _, ok := m.Get("tool"); !ok {
+		t.Fatal("removed without confirmation")
+	}
+	f := testFactory()
+	f.Flags.Yes = true
+	if err := run(f); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := m.Get("tool"); ok {
+		t.Fatal("not removed with --yes")
 	}
 }
 

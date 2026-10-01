@@ -40,6 +40,8 @@ func DetectMethod(exe string) Method {
 		return Method{Name: "scoop", Command: "scoop update reearth"}
 	case strings.Contains(p, "/winget/"), strings.Contains(p, "/windowsapps/"):
 		return Method{Name: "winget", Command: "winget upgrade Reearth.Reearth"}
+	case strings.HasPrefix(p, "/nix/store/"):
+		return Method{Name: "nix", Command: "upgrade reearth with Nix (nix profile upgrade, or update your Nix configuration)"}
 	case runtime.GOOS == "linux" && strings.HasPrefix(p, "/usr/bin/"):
 		return Method{Name: "system package", Command: "upgrade the reearth package with your package manager (apt, dnf, apk)"}
 	}
