@@ -1,0 +1,481 @@
+[
+  {
+    "path": "reearth",
+    "usage": "reearth [flags]",
+    "short": "Work with Re:Earth from the command line",
+    "runnable": false,
+    "flags": [
+      {
+        "name": "account",
+        "type": "string",
+        "usage": "Account to use for this command"
+      },
+      {
+        "name": "debug",
+        "type": "bool",
+        "usage": "Print HTTP traces to stderr (secrets masked)"
+      },
+      {
+        "name": "jq",
+        "type": "string",
+        "usage": "Filter JSON output with a jq expression (implies --json)"
+      },
+      {
+        "name": "json",
+        "type": "string",
+        "usage": "Output JSON; optionally select fields: --json=id,name"
+      },
+      {
+        "name": "no-color",
+        "type": "bool",
+        "usage": "Disable colors"
+      },
+      {
+        "name": "no-input",
+        "type": "bool",
+        "usage": "Never prompt; fail if input is required"
+      },
+      {
+        "name": "output",
+        "shorthand": "o",
+        "type": "string",
+        "usage": "Output format: table|plain|json|yaml|ndjson"
+      },
+      {
+        "name": "quiet",
+        "shorthand": "q",
+        "type": "bool",
+        "usage": "Only print data and errors"
+      },
+      {
+        "name": "workspace",
+        "shorthand": "w",
+        "type": "string",
+        "usage": "Workspace ID"
+      },
+      {
+        "name": "yes",
+        "shorthand": "y",
+        "type": "bool",
+        "usage": "Skip confirmation prompts"
+      }
+    ]
+  },
+  {
+    "path": "reearth hello",
+    "usage": "reearth hello [flags]",
+    "short": "Sample product: greet, and call an API as yourself",
+    "runnable": false
+  },
+  {
+    "path": "reearth hello world",
+    "usage": "reearth hello world [name] [flags]",
+    "short": "Print a greeting",
+    "runnable": true,
+    "flags": [
+      {
+        "name": "shout",
+        "type": "bool",
+        "usage": "Greet loudly"
+      }
+    ]
+  },
+  {
+    "path": "reearth hello me",
+    "usage": "reearth hello me [flags]",
+    "short": "Show your profile via an authenticated API call",
+    "runnable": true
+  },
+  {
+    "path": "reearth login",
+    "usage": "reearth login [account] [flags]",
+    "short": "Sign in and add or refresh an account",
+    "runnable": true,
+    "flags": [
+      {
+        "name": "device",
+        "type": "bool",
+        "usage": "Use the device-code flow"
+      },
+      {
+        "name": "env",
+        "type": "string",
+        "usage": "Environment to sign in to (default: prod)"
+      },
+      {
+        "name": "insecure-storage",
+        "type": "bool",
+        "usage": "Store credentials in a plain file instead of the OS keyring"
+      },
+      {
+        "name": "product",
+        "type": "string",
+        "usage": "Restrict a --with-token account to one product (e.g. cms)"
+      },
+      {
+        "name": "web",
+        "type": "bool",
+        "usage": "Use the browser flow"
+      },
+      {
+        "name": "with-token",
+        "type": "bool",
+        "usage": "Read an API token from stdin instead of signing in"
+      }
+    ]
+  },
+  {
+    "path": "reearth logout",
+    "usage": "reearth logout [account] [flags]",
+    "short": "Sign out and remove an account's credentials",
+    "runnable": true,
+    "flags": [
+      {
+        "name": "all",
+        "type": "bool",
+        "usage": "Log out of every account"
+      }
+    ]
+  },
+  {
+    "path": "reearth use",
+    "usage": "reearth use [account] [flags]",
+    "short": "Switch the active account",
+    "runnable": true
+  },
+  {
+    "path": "reearth account",
+    "usage": "reearth account [flags]",
+    "short": "Manage accounts",
+    "aliases": [
+      "accounts"
+    ],
+    "runnable": false
+  },
+  {
+    "path": "reearth account list",
+    "usage": "reearth account list [flags]",
+    "short": "List accounts",
+    "aliases": [
+      "ls"
+    ],
+    "runnable": true
+  },
+  {
+    "path": "reearth account current",
+    "usage": "reearth account current [flags]",
+    "short": "Show the account used by commands here, and why",
+    "runnable": true
+  },
+  {
+    "path": "reearth account rename",
+    "usage": "reearth account rename \u003cold\u003e \u003cnew\u003e [flags]",
+    "short": "Rename an account",
+    "runnable": true
+  },
+  {
+    "path": "reearth whoami",
+    "usage": "reearth whoami [flags]",
+    "short": "Show the account used by commands here, and why",
+    "runnable": true
+  },
+  {
+    "path": "reearth auth",
+    "usage": "reearth auth [flags]",
+    "short": "Inspect credentials",
+    "runnable": false
+  },
+  {
+    "path": "reearth auth status",
+    "usage": "reearth auth status [flags]",
+    "short": "Check that each account's credentials work",
+    "runnable": true
+  },
+  {
+    "path": "reearth auth token",
+    "usage": "reearth auth token [flags]",
+    "short": "Print an access token for the current account",
+    "runnable": true
+  },
+  {
+    "path": "reearth search",
+    "usage": "reearth search \u003ctask\u003e [flags]",
+    "short": "Find the command for a task",
+    "runnable": true,
+    "flags": [
+      {
+        "name": "limit",
+        "shorthand": "L",
+        "type": "int",
+        "default": "5",
+        "usage": "Maximum number of matches"
+      }
+    ]
+  },
+  {
+    "path": "reearth docs",
+    "usage": "reearth docs [flags]",
+    "short": "Search and read the Re:Earth documentation",
+    "runnable": false
+  },
+  {
+    "path": "reearth docs search",
+    "usage": "reearth docs search \u003cquery\u003e [flags]",
+    "short": "Find documentation pages about a topic",
+    "runnable": true,
+    "flags": [
+      {
+        "name": "limit",
+        "shorthand": "L",
+        "type": "int",
+        "default": "5",
+        "usage": "Maximum number of pages"
+      }
+    ]
+  },
+  {
+    "path": "reearth docs read",
+    "usage": "reearth docs read \u003cid\u003e [flags]",
+    "short": "Print a documentation page as Markdown",
+    "runnable": true
+  },
+  {
+    "path": "reearth api",
+    "usage": "reearth api \u003cproduct\u003e \u003cpath\u003e [flags]",
+    "short": "Send an authenticated request to a product API",
+    "runnable": true,
+    "flags": [
+      {
+        "name": "field",
+        "shorthand": "f",
+        "type": "stringArray",
+        "usage": "Add a string field key=value"
+      },
+      {
+        "name": "header",
+        "shorthand": "H",
+        "type": "stringArray",
+        "usage": "Add a request header 'Name: value'"
+      },
+      {
+        "name": "include",
+        "shorthand": "i",
+        "type": "bool",
+        "usage": "Print the status line and response headers"
+      },
+      {
+        "name": "input",
+        "type": "string",
+        "usage": "Read the request body from a file (\"-\" for stdin)"
+      },
+      {
+        "name": "method",
+        "shorthand": "X",
+        "type": "string",
+        "usage": "HTTP method (default GET, or POST with a body)"
+      },
+      {
+        "name": "typed-field",
+        "shorthand": "F",
+        "type": "stringArray",
+        "usage": "Add a typed field key=value (number, bool, null)"
+      }
+    ]
+  },
+  {
+    "path": "reearth config",
+    "usage": "reearth config [flags]",
+    "short": "Read and change CLI settings",
+    "runnable": false
+  },
+  {
+    "path": "reearth config get",
+    "usage": "reearth config get \u003ckey\u003e [flags]",
+    "short": "Print a setting",
+    "runnable": true
+  },
+  {
+    "path": "reearth config set",
+    "usage": "reearth config set \u003ckey\u003e \u003cvalue\u003e [flags]",
+    "short": "Change a setting",
+    "runnable": true
+  },
+  {
+    "path": "reearth config unset",
+    "usage": "reearth config unset \u003ckey\u003e [flags]",
+    "short": "Reset a setting to its default",
+    "runnable": true
+  },
+  {
+    "path": "reearth config list",
+    "usage": "reearth config list [flags]",
+    "short": "List settings and project values with their sources",
+    "aliases": [
+      "ls"
+    ],
+    "runnable": true,
+    "flags": [
+      {
+        "name": "show-origin",
+        "type": "bool",
+        "usage": "Show where each value comes from"
+      }
+    ]
+  },
+  {
+    "path": "reearth config path",
+    "usage": "reearth config path [flags]",
+    "short": "Print the paths of the config, cache and data directories",
+    "runnable": true
+  },
+  {
+    "path": "reearth skills",
+    "usage": "reearth skills [flags]",
+    "short": "Install the skill that teaches coding agents to use this CLI",
+    "runnable": false
+  },
+  {
+    "path": "reearth skills install",
+    "usage": "reearth skills install [flags]",
+    "short": "Install the agent skill (SKILL.md)",
+    "runnable": true,
+    "flags": [
+      {
+        "name": "agent",
+        "type": "stringArray",
+        "default": "[claude]",
+        "usage": "Target agent: claude or agents (repeatable)"
+      },
+      {
+        "name": "dir",
+        "type": "string",
+        "usage": "Install into this skills directory"
+      },
+      {
+        "name": "print",
+        "type": "bool",
+        "usage": "Print SKILL.md to stdout instead of writing it"
+      },
+      {
+        "name": "project",
+        "type": "bool",
+        "usage": "Install into the current directory instead of your home directory"
+      }
+    ]
+  },
+  {
+    "path": "reearth doctor",
+    "usage": "reearth doctor [flags]",
+    "short": "Diagnose configuration, credentials, network and installation",
+    "runnable": true
+  },
+  {
+    "path": "reearth version",
+    "usage": "reearth version [flags]",
+    "short": "Print the CLI version",
+    "runnable": true
+  },
+  {
+    "path": "reearth upgrade",
+    "usage": "reearth upgrade [flags]",
+    "short": "Upgrade the CLI to the latest release",
+    "runnable": true,
+    "flags": [
+      {
+        "name": "check",
+        "type": "bool",
+        "usage": "Only check whether an update is available"
+      },
+      {
+        "name": "force",
+        "type": "bool",
+        "usage": "Reinstall even if up to date (also replaces development builds)"
+      },
+      {
+        "name": "version",
+        "type": "string",
+        "usage": "Install a specific version"
+      }
+    ]
+  },
+  {
+    "path": "reearth extension",
+    "usage": "reearth extension [flags]",
+    "short": "Install and run extensions",
+    "aliases": [
+      "ext"
+    ],
+    "runnable": false
+  },
+  {
+    "path": "reearth extension install",
+    "usage": "reearth extension install \u003cowner/reearth-name\u003e [flags]",
+    "short": "Install an extension from a GitHub release",
+    "runnable": true,
+    "flags": [
+      {
+        "name": "pin",
+        "type": "string",
+        "usage": "Install this release tag instead of the latest"
+      }
+    ]
+  },
+  {
+    "path": "reearth extension list",
+    "usage": "reearth extension list [flags]",
+    "short": "List installed extensions",
+    "aliases": [
+      "ls"
+    ],
+    "runnable": true
+  },
+  {
+    "path": "reearth extension upgrade",
+    "usage": "reearth extension upgrade [name] [flags]",
+    "short": "Upgrade extensions to their latest release",
+    "runnable": true,
+    "flags": [
+      {
+        "name": "all",
+        "type": "bool",
+        "usage": "Upgrade every extension"
+      }
+    ]
+  },
+  {
+    "path": "reearth extension remove",
+    "usage": "reearth extension remove \u003cname\u003e [flags]",
+    "short": "Remove an extension",
+    "aliases": [
+      "rm"
+    ],
+    "runnable": true
+  },
+  {
+    "path": "reearth extension exec",
+    "usage": "reearth extension exec \u003cname\u003e [args...] [flags]",
+    "short": "Run an installed extension",
+    "runnable": true
+  },
+  {
+    "path": "reearth formatting",
+    "usage": "reearth help formatting",
+    "short": "Output formats, JSON fields and errors on stderr",
+    "runnable": false,
+    "topic": true
+  },
+  {
+    "path": "reearth exit-codes",
+    "usage": "reearth help exit-codes",
+    "short": "What each exit status means",
+    "runnable": false,
+    "topic": true
+  },
+  {
+    "path": "reearth environment",
+    "usage": "reearth help environment",
+    "short": "Environment variables the CLI reads",
+    "runnable": false,
+    "topic": true
+  }
+]

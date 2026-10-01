@@ -202,28 +202,29 @@ func TestTokenAccountAndProductScope(t *testing.T) {
 	}
 }
 
-func TestSkills(t *testing.T) {
+func TestSkillsInstall(t *testing.T) {
 	setup(t)
-	r := run(t, unified, "", nil, "skills", "hello")
-	if !strings.Contains(r.out, "### `reearth hello world [name] [flags]`") {
-		t.Fatalf("command reference missing:\n%s", r.out)
-	}
-	r = run(t, unified, "", nil, "skills", "list", "--jq", ".[].name")
-	for _, want := range []string{"overview", "auth", "output", "api", "hello"} {
-		if !strings.Contains(r.out, want+"\n") {
-			t.Errorf("doc %s missing from %q", want, r.out)
-		}
-	}
 	dir := t.TempDir()
 	if r := run(t, unified, "", nil, "skills", "install", "--dir", dir); r.code != 0 {
 		t.Fatalf("%+v", r)
 	}
 	b, err := os.ReadFile(filepath.Join(dir, "reearth", "SKILL.md"))
-	if err != nil || !strings.Contains(string(b), "`reearth skills <doc>`") {
+	if err != nil || !strings.Contains(string(b), "`reearth search \"<task>\"`") {
 		t.Fatalf("SKILL.md = %q (%v)", b, err)
 	}
-	if r := run(t, unified, "", nil, "skills", "nope"); r.code != cmdutil.ExitNotFound {
+}
+
+func TestHelpTopics(t *testing.T) {
+	setup(t)
+	r := run(t, unified, "", nil, "help", "exit-codes")
+	if r.code != 0 || !strings.Contains(r.out, "Run `reearth login`") {
 		t.Fatalf("%+v", r)
+	}
+	if r := run(t, unified, "", nil, "--help"); !strings.Contains(r.out, "Help topics") || !strings.Contains(r.out, "environment") {
+		t.Fatalf("root help lacks topics:\n%s", r.out)
+	}
+	if r := run(t, unified, "", nil, "search", "what", "exit", "code", "4", "means", "--jq", ".[0].command"); r.out != "reearth help exit-codes\n" {
+		t.Fatalf("search = %+v", r)
 	}
 }
 
@@ -233,11 +234,72 @@ func TestStandalone(t *testing.T) {
 	if r := run(t, o, "", nil, "world"); r.out != "Hello, world!\n" {
 		t.Fatalf("%+v", r)
 	}
-	r := run(t, o, "", nil, "skills", "hello")
-	if !strings.Contains(r.out, "### `reearth-hello world [name] [flags]`") || !strings.Contains(r.out, "$ reearth-hello world") {
-		t.Fatalf("standalone docs:\n%s", r.out)
+	r := run(t, o, "", nil, "search", "greeting")
+	if !strings.HasPrefix(r.out, "reearth-hello world\t") {
+		t.Fatalf("standalone search = %+v", r)
+	}
+	if r := run(t, o, "", nil, "help", "exit-codes"); !strings.Contains(r.out, "Run `reearth-hello login`") {
+		t.Fatalf("standalone topic = %+v", r)
 	}
 	if r := run(t, o, "", nil, "login", "--help"); r.code != 0 || !strings.Contains(r.out, "reearth-hello login") {
 		t.Fatalf("%+v", r)
+	}
+}
+
+func TestSearch(t *testing.T) {
+	setup(t)
+	r := run(t, unified, "", nil, "search", "print", "a", "greeting", "--jq", ".[0].command")
+	if r.code != 0 || r.out != "reearth hello world\n" {
+		t.Fatalf("%+v", r)
+	}
+	if r := run(t, unified, "", nil, "search", "zzzz", "--json"); r.code != 0 || strings.TrimSpace(r.out) != "[]" {
+		t.Fatalf("no match = %+v", r)
+	}
+}
+
+func TestAgentHelpNote(t *testing.T) {
+	setup(t)
+	help := func(agent string, args ...string) string {
+		ios, _, out, _ := iostreams.Test()
+		ios.Agent = agent
+		if code := app.Execute(app.NewFactory(unified, ios), unified, args); code != 0 {
+			t.Fatalf("%v: exit %d", args, code)
+		}
+		return out.String()
+	}
+	const note = "`reearth search \"<task>\"`"
+	if !strings.Contains(help("claude-code", "hello", "--help"), note) {
+		t.Error("group help lacks the search note for agents")
+	}
+	if strings.Contains(help("claude-code", "hello", "world", "--help"), note) {
+		t.Error("leaf help must not carry the search note")
+	}
+	if strings.Contains(help("", "hello", "--help"), note) {
+		t.Error("humans must not see the agent note")
+	}
+}
+
+func TestDocs(t *testing.T) {
+	setup(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/llms-full.txt" {
+			http.NotFound(w, r)
+			return
+		}
+		_, _ = w.Write([]byte("# 参照フィールドでモデルどうしをつなぐ\n\nSource: https://docs.reearth.io/ja/cms/reference-field/\n\n> 参照フィールドの手順。\n\n[モデル](/ja/cms/model/)\n"))
+	}))
+	t.Cleanup(srv.Close)
+	t.Setenv("REEARTH_DOCS_URL", srv.URL)
+
+	r := run(t, unified, "", nil, "docs", "search", "参照フィールド", "--jq", ".[0].id")
+	if r.code != 0 || r.out != "ja/cms/reference-field\n" {
+		t.Fatalf("search = %+v", r)
+	}
+	r = run(t, unified, "", nil, "docs", "read", "ja/cms/reference-field")
+	if r.code != 0 || !strings.Contains(r.out, "[モデル]("+srv.URL+"/ja/cms/model/)") {
+		t.Fatalf("read = %+v", r)
+	}
+	if r := run(t, unified, "", nil, "docs", "read", "nope"); r.code != cmdutil.ExitNotFound {
+		t.Fatalf("missing page = %+v", r)
 	}
 }

@@ -1,0 +1,42 @@
+Accounts and credentials
+
+  REEARTH_TOKEN               Use this API token instead of a stored account
+                              (meant for CI)
+  REEARTH_<PRODUCT>_TOKEN     Use this token for one product only, such as
+                              REEARTH_CMS_TOKEN
+  REEARTH_ACCOUNT             Use this stored account instead of the active one
+  REEARTH_ENV                 Environment for REEARTH_TOKEN: prod, staging, or
+                              one defined under envs: in the config file
+
+Products
+
+  REEARTH_<PRODUCT>_BASE_URL  Send a product's API requests to this URL
+  REEARTH_<PRODUCT>_<KEY>     A product-scoped default, such as
+                              REEARTH_CMS_PROJECT; overrides .reearth.yaml
+  REEARTH_DOCS_URL            Read the documentation from this site instead of
+                              https://docs.reearth.io
+
+Settings (each overrides `{{app}} config`)
+
+  REEARTH_OUTPUT              Default output format on a TTY
+  REEARTH_PROMPT              "disabled" turns off interactive prompts
+  REEARTH_UPDATE_CHECK        "disabled" turns off update checks
+  REEARTH_BROWSER             Command used to open URLs
+
+Behavior
+
+  REEARTH_NO_INPUT            Never prompt, as with --no-input
+  REEARTH_AGENT               Force agent mode on (1) or off (0); it is
+                              otherwise detected from the coding agent
+  REEARTH_DEBUG               Print HTTP traces to stderr, as with --debug
+  REEARTH_NO_UPDATE_NOTIFIER  Do not print update notices
+  NO_COLOR, CLICOLOR_FORCE    Disable or force colors
+
+Locations
+
+  REEARTH_CONFIG_DIR          Config files (default: ~/.config/reearth)
+  REEARTH_CACHE_DIR           Caches, such as the downloaded documentation
+  REEARTH_DATA_DIR            Installed extensions (default: ~/.local/share/reearth)
+
+XDG_CONFIG_HOME, XDG_CACHE_HOME and XDG_DATA_HOME are honored when the
+REEARTH_ variables are unset.

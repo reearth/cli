@@ -1,19 +1,32 @@
 ---
-name: reearth
+name: {{.App}}
 description: Operate Re:Earth products (Visualizer, CMS, Flow) through the `{{.App}}` CLI. Use when the user asks to read or change Re:Earth data or projects, or to script Re:Earth.
 ---
 
 # Re:Earth CLI
 
-The CLI documents itself, and its docs always match the installed version. Do not rely on memory; read them first:
+The installed CLI documents itself, and its commands change between versions. Do not rely on memory.
 
-1. `{{.App}} skills list` — list the available docs
-2. `{{.App}} skills <doc>` — read one (start with `overview`)
-3. `{{.App}} <command> --help` — show the flags of a command
+## Finding a command
 
-Rules:
+1. `{{.App}} search "<task>"`: describe the action and the resource in English, such as `{{.App}} search "list items of a model"`. It prints the best matches with a summary. Do not read `--help` level by level.
+2. `<command> --help`: read the flags and examples of the command you picked.
+3. `{{.App}} help <topic>`: read `formatting`, `exit-codes` or `environment` when you need them.
 
-- Pass `--json` (optionally `--jq '<expr>'`) whenever you need to parse output.
+If no command fits, `{{.App}} api <product> <path>` sends an authenticated request to the product API.
+
+## Learning about the products
+
+For how Visualizer, CMS and Flow work, their concepts, and the plugin and API guides, search the documentation at docs.reearth.io. It is in Japanese, so search in Japanese:
+
+1. `{{.App}} docs search "<topic>"`, such as `{{.App}} docs search "参照フィールド"`
+2. `{{.App}} docs read <id>` with an id from the results
+
+## Rules
+
+- Pass `--json` when you parse output, and `--jq '<expr>'` to filter it. Never parse tables.
+- stdout carries only data. Messages go to stderr; with `--json`, errors are JSON there: `{"error":{"code":"...","message":"...","hint":"..."}}`.
+- The CLI never prompts you. When input is missing, it exits with code 2 and names the flag to pass.
+- Exit code 4 means the account must log in. Ask the user to run `{{.App}} login`; a login needs a person in a browser.
 - Never print or copy access tokens. The CLI authenticates for you.
-- Only add `--yes` to destructive commands after the user has confirmed.
-- If a command fails with exit code 4, ask the user to run `{{.App}} login`.
+- Add `--yes` to a destructive command only after the user has confirmed.

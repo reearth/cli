@@ -1,12 +1,14 @@
 package app
 
 import (
+	"fmt"
+
 	"github.com/spf13/cobra"
 
 	"github.com/reearth/cli/sdk/core"
 )
 
-const usageTemplate = `{{heading "Usage"}}{{if .Runnable}}
+const usageTemplate = `{{agentNote .}}{{heading "Usage"}}{{if .Runnable}}
   {{.UseLine}}{{end}}{{if .HasAvailableSubCommands}}
   {{.CommandPath}} <command> [flags]{{end}}{{if gt (len .Aliases) 0}}
 
@@ -23,7 +25,10 @@ const usageTemplate = `{{heading "Usage"}}{{if .Runnable}}
   {{rpad .Name .NamePadding}}  {{dim .Short}}{{end}}{{end}}{{end}}{{end}}{{if not .AllChildCommandsHaveGroup}}
 
 {{heading "Additional Commands"}}{{range $cmds}}{{if (and (eq .GroupID "") .IsAvailableCommand)}}
-  {{rpad .Name .NamePadding}}  {{dim .Short}}{{end}}{{end}}{{end}}{{end}}{{end}}{{if .HasAvailableLocalFlags}}
+  {{rpad .Name .NamePadding}}  {{dim .Short}}{{end}}{{end}}{{end}}{{end}}{{end}}{{if .HasHelpSubCommands}}
+
+{{heading "Help topics"}}{{range .Commands}}{{if .IsAdditionalHelpTopicCommand}}
+  {{rpad .Name .NamePadding}}  {{dim .Short}}{{end}}{{end}}{{end}}{{if .HasAvailableLocalFlags}}
 
 {{heading "Flags"}}
 {{.LocalFlags.FlagUsages | trimTrailingWhitespaces}}{{end}}{{if .HasAvailableInheritedFlags}}
@@ -31,7 +36,8 @@ const usageTemplate = `{{heading "Usage"}}{{if .Runnable}}
 {{heading "Global Flags"}}
 {{.InheritedFlags.FlagUsages | trimTrailingWhitespaces}}{{end}}{{if .HasAvailableSubCommands}}
 
-{{dim (printf "Run '%s <command> --help' for more information about a command." .CommandPath)}}{{end}}
+{{dim (printf "Run '%s <command> --help' for more information about a command." .CommandPath)}}{{end}}{{if .HasHelpSubCommands}}
+{{dim (printf "Run '%s help <topic>' to read a help topic." .Root.Name)}}{{end}}
 `
 
 func setHelp(root *cobra.Command, f *core.Factory) {
@@ -46,5 +52,18 @@ func setHelp(root *cobra.Command, f *core.Factory) {
 		}
 		return false
 	})
+	cobra.AddTemplateFunc("agentNote", func(c *cobra.Command) string {
+		return agentNote(f, c)
+	})
 	root.SetUsageTemplate(usageTemplate)
+}
+
+// agentNote steers coding agents to `search` on the help of command groups,
+// where reading --help level by level would cost one call per level. Leaf
+// commands get no note: their help is the last step of a search.
+func agentNote(f *core.Factory, c *cobra.Command) string {
+	if f.IO.Agent == "" || !c.HasAvailableSubCommands() {
+		return ""
+	}
+	return fmt.Sprintf("Agents: find a command with `%s search \"<task>\"` instead of reading --help level by level.\n\n", c.Root().Name())
 }

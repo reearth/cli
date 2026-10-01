@@ -1,0 +1,24 @@
+Commands print data to stdout. Progress, hints, warnings and errors go to
+stderr, so a pipeline never receives decoration.
+
+Formats
+
+  (no flag) on a TTY       A table for humans, with relative times and shortened IDs
+  (no flag) without a TTY  Tab-separated rows without a header
+  --json                   JSON with every field, full IDs and RFC 3339 times
+  --json=id,name           JSON with only the listed fields
+  --jq '.[].id'            JSON filtered with jq; string results are printed raw
+  -o yaml, -o ndjson       YAML, or one JSON value per line
+
+Parse --json output in scripts. Tables and plain rows may change between
+versions; JSON field names do not.
+
+Change the default format on a TTY with `{{app}} config set output <format>`.
+
+Errors
+
+With --json, an error is also printed to stderr as JSON:
+
+  {"error":{"code":"auth.reauth_required","message":"...","hint":"..."}}
+
+The code is stable. See `{{app}} help exit-codes` for the exit status.

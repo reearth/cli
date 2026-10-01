@@ -18,6 +18,11 @@ import (
 const name = "reearth"
 
 func main() {
+	os.Exit(app.Run(options(), os.Args[1:]))
+}
+
+// options assembles the distributed CLI.
+func options() app.Options {
 	var root *cobra.Command
 	isBuiltin := func(n string) bool {
 		if root == nil {
@@ -30,7 +35,7 @@ func main() {
 	dispatch := extension.Dispatch(exts)
 
 	var notifier *update.Notifier
-	os.Exit(app.Run(app.Options{
+	return app.Options{
 		Name: name,
 		Products: []core.Product{
 			hello.Product{},
@@ -49,5 +54,5 @@ func main() {
 			notifier.Notify(f)
 		},
 		DoctorChecks: []func(context.Context) []core.Check{update.DoctorCheck(name)},
-	}, os.Args[1:]))
+	}
 }

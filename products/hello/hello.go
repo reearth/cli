@@ -3,10 +3,8 @@
 package hello
 
 import (
-	"embed"
 	"encoding/json"
 	"fmt"
-	"io/fs"
 	"net/http"
 	"strings"
 
@@ -18,15 +16,9 @@ import (
 	"github.com/reearth/cli/sdk/output"
 )
 
-//go:embed skills/*.md
-var docs embed.FS
-
 type Product struct{}
 
-var (
-	_ core.APIProduct    = Product{}
-	_ core.SkillsProduct = Product{}
-)
+var _ core.APIProduct = Product{}
 
 func (Product) Name() string  { return "hello" }
 func (Product) Short() string { return "Sample product: greet, and call an API as yourself" }
@@ -35,15 +27,17 @@ func (Product) Short() string { return "Sample product: greet, and call an API a
 // without any product backend.
 func (Product) BaseURL(env *auth.Env) string { return env.Domain }
 
-func (Product) Skills() fs.FS {
-	sub, _ := fs.Sub(docs, "skills")
-	return sub
-}
-
 func (p Product) Command(f *core.Factory) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "hello",
 		Short: p.Short(),
+		// A product's Long explains its concepts. --help shows it, and search
+		// matches it against the product's commands, so write it for agents too.
+		Long: `A sample product that shows how product commands behave.
+
+"world" prints a greeting and needs no login. "me" calls an API as the
+current account and prints your profile; it exits with code 4 when you are
+not logged in. Both support --json.`,
 	}
 	cmd.AddCommand(newCmdWorld(f), newCmdMe(f, p))
 	return cmd

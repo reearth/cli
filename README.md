@@ -32,7 +32,10 @@ Run `reearth upgrade` to update. If you installed with a package manager, the co
 | `reearth auth status` | Check that each account's credentials work |
 | `reearth api <product> <path>` | Send a raw authenticated API request |
 | `reearth config get/set/list` | Read and change settings |
-| `reearth skills [doc]` / `skills install` | Read docs for coding agents, or install the agent skill |
+| `reearth search "<task>"` | Find the command for a task |
+| `reearth docs search/read` | Search and read the documentation at docs.reearth.io |
+| `reearth help <topic>` | Read about output formats, exit codes and environment variables |
+| `reearth skills install` | Install the skill that teaches coding agents to use the CLI |
 | `reearth extension install/list/exec` | Manage extensions |
 | `reearth doctor` | Diagnose configuration, the keyring, the network and the installation |
 | `reearth upgrade` | Update the CLI |

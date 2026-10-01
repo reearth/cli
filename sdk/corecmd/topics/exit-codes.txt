@@ -1,0 +1,12 @@
+The exit status of a command tells what went wrong:
+
+  0  Success
+  1  General error
+  2  Invalid usage, or input is required but prompting is not possible.
+     The message names the flag to pass.
+  4  Authentication is required or has expired. Run `{{app}} login`.
+  5  Not found
+  8  Cancelled by the user
+
+The CLI never prompts without a terminal, under a coding agent or on CI, and
+exits with 2 instead. Destructive commands then need --yes.

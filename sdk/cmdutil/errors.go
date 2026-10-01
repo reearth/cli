@@ -8,7 +8,7 @@ import (
 	"github.com/reearth/cli/sdk/prompt"
 )
 
-// Exit codes. Keep in sync with sdk/skills/docs/output.md.
+// Exit codes. Keep in sync with sdk/corecmd/topics/exit-codes.txt and sdk/skills/SKILL.md.tmpl.
 const (
 	ExitOK       = 0
 	ExitError    = 1

@@ -39,6 +39,18 @@ func NewCmdAccount(f *core.Factory) *cobra.Command {
 		Use:     "account",
 		Aliases: []string{"accounts"},
 		Short:   "Manage accounts",
+		Long: fmt.Sprintf(`Manage the accounts stored by "%[1]s login".
+
+Each command chooses its account in this order:
+
+  1. the --account flag
+  2. REEARTH_TOKEN, an anonymous token account meant for CI
+  3. REEARTH_ACCOUNT
+  4. account: in .reearth.yaml, searched upward from the current directory
+  5. the active account, set with "%[1]s use"
+
+REEARTH_<PRODUCT>_TOKEN, such as REEARTH_CMS_TOKEN, overrides the token for
+that product only. "%[1]s whoami" shows which account applies here and why.`, f.AppName),
 	}
 	cmd.AddCommand(newCmdAccountList(f), newCmdAccountCurrent(f, "current"), newCmdAccountRename(f))
 	return cmd

@@ -12,7 +12,8 @@ The CLI takes its cues from `gh`, `gcloud`, `stripe`, `wrangler`, `docker` and `
 4. **Products are plugins on a shared SDK.** Authentication, accounts, output, configuration and HTTP live in `sdk/`. A product only describes its commands.
 5. **Products never see credentials.** A product asks for an authenticated `*http.Client`. It never handles token strings, so tokens cannot leak through product code.
 6. **Built-in commands cannot be shadowed.** Extensions run outside the trust boundary. They cannot take the name of a built-in command and do not receive credentials.
-7. **Docs ship inside the binary.** Agent docs are embedded and partly generated from the command tree, so they always match the installed version.
+7. **The binary documents itself.** `search`, `--help` and help topics are built from the command tree, so they always match the installed version.
+8. **Agents search; they do not crawl.** `reearth search "<task>"` ranks every command offline. Walking `--help` level by level costs an agent one call per level, so the help of a command group tells agents to search instead.
 
 ## Architecture
 
@@ -22,12 +23,14 @@ cmd/reearth-<name>/  standalone product binaries (go install only; not distribut
 sdk/                 the library that products build on
   app/               assembles products and core commands into a CLI
   core/              the Product interface and the Factory passed to commands
-  corecmd/           login, account, auth, api, config, skills, doctor, version
+  corecmd/           login, account, auth, api, config, search, help topics, skills, doctor, version
   auth/ credstore/   login flows, accounts, token refresh, keyring
   config/            user config (~/.config/reearth) and project files (.reearth.yaml)
   output/ iostreams/ rendering, TTY / agent / CI detection, colors, spinners
   httpx/             authenticated HTTP transport with retries and debug traces
-  skills/            embedded agent docs
+  skills/            the SKILL.md that `skills install` writes
+  cmdtree/           the command tree as data: search, surface snapshot, description lint
+  docs/              docs.reearth.io through llms-full.txt: download, cache, page split, search
 products/<name>/     product commands
 internal/            features of the distributed binary only: self-update, extensions
 docs/                GitHub Pages (install.sh, served at cli.reearth.io)
@@ -104,12 +107,22 @@ Use the helpers in `iostreams` (`Success`, `Warn`, `Info`, `Hint`, `StartProgres
 
 ## Docs for agents
 
-`SKILL.md` stays thin on purpose. It tells agents to run `reearth skills <doc>` and states a few rules. The docs themselves are embedded markdown files, and the reference for each product's commands is generated from its cobra tree when a doc is rendered. A stale SKILL.md therefore never teaches outdated flags.
+Agents learn the CLI from the CLI itself. There are no separate docs to keep in sync:
 
-- Core docs live in `sdk/skills/docs/`. Product docs live in `products/<name>/skills/`.
-- Each doc starts with front matter containing a `name` and a one-line `summary`.
-- In a doc body, write `{{app}}` for the binary name and `{{cmd}}` for the product's command prefix (`reearth cms` or `reearth-cms`).
-- Write docs for agents: say what to run and what the exit codes mean. Leave flag listings to the generated reference.
+- `reearth search "<task>"` finds a command. `<command> --help` shows its flags and examples.
+- A command's `Long` carries what an agent needs beyond the flags: concepts, the order in which values are resolved, and what to do when the command fails. `search` matches it too, and the `Long` of a group leads to the group's commands.
+- Knowledge that belongs to no single command is a help topic (`reearth help exit-codes`): a text file in `sdk/corecmd/topics/` registered in `topics.go`. Write `{{app}}` for the binary name.
+- Knowledge about the products themselves, such as what a reference field is, lives at docs.reearth.io. `reearth docs search` and `docs read` read it through the site's `llms-full.txt` (`sdk/docs`), so do not copy it into `Long`; link the page instead.
+- `SKILL.md` (`sdk/skills/SKILL.md.tmpl`) holds only what outlives a release: how to find commands, and the rules for output, prompts, login and `--yes`. It names no flags, so an old installed copy never teaches outdated ones.
+
+## Command descriptions and the command surface
+
+`search`, `--help` and the help topics all read the same descriptions, so they are held to a few rules. `cmdtree.Lint` checks them in `cmd/reearth/main_test.go`:
+
+- Every visible command has a `Short` of two words or more that says what the command does. A summary that repeats the name, such as `dns` or `Operations for records`, cannot be found by describing a task.
+- `Short` and flag usages are one line, start with a capital letter and have no trailing period. Put details in `Long`; it is searched too.
+
+`cmd/reearth/testdata/commands.json` pins every command, alias, argument and flag of the distributed binary. When a change touches the command tree, run `make golden` and commit the diff. Reviewers read that diff to spot renamed or removed commands and flags, which break users' scripts.
 
 ## Extensions and self-update
 
@@ -140,7 +153,7 @@ Extensions follow the `gh extension` model with tighter rules. Binaries named `r
    - Read project-scoped defaults, such as a CMS project, with `f.ProjectValue(p, "project", flagValue)`. The value comes from the flag, then `REEARTH_<PRODUCT>_PROJECT`, then `.reearth.yaml`.
    - The raw `reearth api <product> <path>` command works automatically.
 
-3. Add agent docs. Implement `core.SkillsProduct` by returning an embedded `fs.FS` of `skills/*.md`. The doc named after the product gets the generated command reference.
+3. Explain the product's concepts, such as how projects, models and items relate, in the `Long` of its root command. Agents read it with `--help`, and `search` uses it to rank the product's commands.
 
 4. Register the product in `cmd/reearth/main.go`. Optionally, add `cmd/reearth-<name>/main.go`, which contains only `app.Main(<name>.Product{})`.
 

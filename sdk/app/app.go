@@ -24,7 +24,6 @@ import (
 	"github.com/reearth/cli/sdk/corecmd"
 	"github.com/reearth/cli/sdk/iostreams"
 	"github.com/reearth/cli/sdk/prompt"
-	"github.com/reearth/cli/sdk/skills"
 )
 
 type (
@@ -111,7 +110,6 @@ func NewFactory(o Options, io *iostreams.IOStreams) *core.Factory {
 		Prompter:     prompt.New(io),
 		Flags:        &core.GlobalFlags{},
 		Products:     o.Products,
-		Skills:       skills.NewRegistry(o.Name),
 		DoctorChecks: o.DoctorChecks,
 	}
 	f.OpenBrowser = func(url string) error { return openBrowser(f, url) }
@@ -184,7 +182,6 @@ func NewRoot(f *core.Factory, o Options) *cobra.Command {
 			}
 			pc.GroupID = groupProducts
 			root.AddCommand(pc)
-			registerSkills(f, p, []*cobra.Command{pc}, o.Name+" "+p.Name())
 		}
 	}
 
@@ -203,6 +200,8 @@ func NewRoot(f *core.Factory, o Options) *cobra.Command {
 		corecmd.NewCmdAuth(f),
 	)
 	add(groupMore,
+		corecmd.NewCmdSearch(f),
+		corecmd.NewCmdDocs(f),
 		corecmd.NewCmdAPI(f),
 		corecmd.NewCmdConfig(f),
 		corecmd.NewCmdSkills(f),
@@ -212,6 +211,7 @@ func NewRoot(f *core.Factory, o Options) *cobra.Command {
 	if o.Extra != nil {
 		add(groupMore, o.Extra(f)...)
 	}
+	root.AddCommand(corecmd.NewHelpTopics(f)...)
 	root.SetHelpCommandGroupID(groupMore)
 	root.SetCompletionCommandGroupID(groupMore)
 
@@ -247,24 +247,12 @@ func mountStandalone(f *core.Factory, root *cobra.Command, p core.Product) {
 			return pre(cmd, args)
 		}
 	}
-	subs := pc.Commands()
-	for _, c := range subs {
+	for _, c := range pc.Commands() {
 		pc.RemoveCommand(c)
 		if c.GroupID == "" {
 			c.GroupID = groupProducts
 		}
 		root.AddCommand(c)
-	}
-	registerSkills(f, p, subs, root.Name())
-}
-
-func registerSkills(f *core.Factory, p core.Product, cmds []*cobra.Command, prefix string) {
-	sp, ok := p.(core.SkillsProduct)
-	if !ok {
-		return
-	}
-	if err := f.Skills.AddFS(p.Name(), sp.Skills(), cmds, prefix); err != nil {
-		panic(fmt.Sprintf("product %s: %v", p.Name(), err))
 	}
 }
 

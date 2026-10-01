@@ -32,7 +32,12 @@ func NewCmdLogin(f *core.Factory) *cobra.Command {
 
 The browser flow (authorization code with PKCE on a loopback address) is used
 when a local browser is available. The device-code flow is used otherwise,
-for example over SSH or in a container. Force one with --web or --device.`,
+for example over SSH or in a container. Force one with --web or --device.
+
+A login needs a person to finish it in a browser. Coding agents should ask the
+user to run it rather than complete it themselves. Commands never need a token
+passed to them: access tokens are refreshed automatically, and a command exits
+with code 4 when the account must log in again.`,
 		Example: `  $ reearth login
   $ reearth login work --env prod
   $ reearth login --device

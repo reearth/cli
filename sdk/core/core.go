@@ -5,7 +5,6 @@ package core
 import (
 	"context"
 	"fmt"
-	"io/fs"
 	"net/http"
 	"os"
 	"strings"
@@ -21,7 +20,6 @@ import (
 	"github.com/reearth/cli/sdk/iostreams"
 	"github.com/reearth/cli/sdk/output"
 	"github.com/reearth/cli/sdk/prompt"
-	"github.com/reearth/cli/sdk/skills"
 )
 
 // Product is a Re:Earth product CLI (viz, cms, flow, ...). The same Product
@@ -40,13 +38,6 @@ type APIProduct interface {
 	Product
 	// BaseURL returns the API base URL for an environment ("" if unknown).
 	BaseURL(env *auth.Env) string
-}
-
-// SkillsProduct is implemented by products that ship agent docs.
-type SkillsProduct interface {
-	Product
-	// Skills returns markdown docs (see sdk/skills for the format).
-	Skills() fs.FS
 }
 
 // GlobalFlags are the persistent flags shared by every command.
@@ -69,7 +60,6 @@ type Factory struct {
 	Prompter prompt.Prompter
 	Flags    *GlobalFlags
 	Products []Product
-	Skills   *skills.Registry
 
 	// OpenBrowser opens a URL (overridable for tests).
 	OpenBrowser func(url string) error
@@ -175,6 +165,12 @@ func (f *Factory) baseHTTPClient(ts httpx.TokenSource) *http.Client {
 		o.Debug = f.IO.ErrOut
 	}
 	return httpx.NewClient(o)
+}
+
+// PublicHTTPClient returns a client without credentials, for public
+// resources such as the documentation site.
+func (f *Factory) PublicHTTPClient() *http.Client {
+	return f.baseHTTPClient(nil)
 }
 
 // HTTPClient returns an authenticated client for a product. Tokens are

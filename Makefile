@@ -1,10 +1,13 @@
-.PHONY: build test lint snapshot
+.PHONY: build test lint golden snapshot
 
 build:
 	go build -o bin/reearth ./cmd/reearth
 
 test:
 	go test ./...
+
+golden:
+	go test ./cmd/reearth -run TestCommandSurface -update
 
 lint:
 	golangci-lint run ./...
