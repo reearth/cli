@@ -10,6 +10,7 @@ import (
 	"github.com/reearth/cli/internal/extension"
 	"github.com/reearth/cli/internal/update"
 	"github.com/reearth/cli/products/hello"
+	"github.com/reearth/cli/products/visualizer"
 	"github.com/reearth/cli/sdk/app"
 	"github.com/reearth/cli/sdk/build"
 	"github.com/reearth/cli/sdk/core"
@@ -39,6 +40,7 @@ func options() app.Options {
 		Name: name,
 		Products: []core.Product{
 			hello.Product{},
+			visualizer.Product{},
 		},
 		Extra: func(f *core.Factory) []*cobra.Command {
 			return []*cobra.Command{update.NewCmdUpgrade(f), extension.NewCmd(f, exts)}

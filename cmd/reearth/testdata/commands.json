@@ -87,6 +87,70 @@
     "runnable": true
   },
   {
+    "path": "reearth visualizer",
+    "usage": "reearth visualizer [flags]",
+    "short": "Manage Re:Earth Visualizer projects and plugins",
+    "aliases": [
+      "vis"
+    ],
+    "runnable": false
+  },
+  {
+    "path": "reearth visualizer plugin",
+    "usage": "reearth visualizer plugin [flags]",
+    "short": "Create, check and package Visualizer plugins",
+    "runnable": false
+  },
+  {
+    "path": "reearth visualizer plugin init",
+    "usage": "reearth visualizer plugin init \u003cdir\u003e [flags]",
+    "short": "Create a plugin from a template",
+    "runnable": true,
+    "flags": [
+      {
+        "name": "extension-id",
+        "type": "string",
+        "usage": "Extension ID, also its file name (default: the plugin ID)"
+      },
+      {
+        "name": "id",
+        "type": "string",
+        "usage": "Plugin ID (default: the directory name)"
+      },
+      {
+        "name": "name",
+        "type": "string",
+        "usage": "Display name (default: the plugin ID)"
+      },
+      {
+        "name": "type",
+        "type": "string",
+        "default": "widget",
+        "usage": "Extension type: widget, storyBlock, infoboxBlock"
+      }
+    ]
+  },
+  {
+    "path": "reearth visualizer plugin validate",
+    "usage": "reearth visualizer plugin validate [dir] [flags]",
+    "short": "Check a plugin before packing it",
+    "runnable": true
+  },
+  {
+    "path": "reearth visualizer plugin pack",
+    "usage": "reearth visualizer plugin pack [dir] [flags]",
+    "short": "Validate a plugin and zip it for upload",
+    "runnable": true,
+    "flags": [
+      {
+        "name": "output",
+        "shorthand": "o",
+        "type": "string",
+        "usage": "Zip path (default: \u003cid\u003e-\u003cversion\u003e.zip)"
+      }
+    ]
+  },
+  {
     "path": "reearth login",
     "usage": "reearth login [account] [flags]",
     "short": "Sign in and add or refresh an account",
