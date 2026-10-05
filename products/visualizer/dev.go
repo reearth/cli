@@ -91,7 +91,7 @@ func runDev(ctx context.Context, f *core.Factory, opts *devOptions) error {
 	}
 
 	f.IO.StopProgress()
-	f.IO.Success(fmt.Sprintf("Workbench ready (version: %s, plugin API: %s)", manifest.Version, manifest.PluginAPIVersion))
+	f.IO.Success("Workbench ready (version: %s, plugin API: %s)", manifest.Version, manifest.PluginAPIVersion)
 
 	// Start HTTP server
 	return startDevServer(ctx, f, workbenchPath, opts.dir, opts.port)
@@ -161,11 +161,12 @@ func resolveDownloadURL(ctx context.Context, f *core.Factory, version string) (s
 	client := f.PublicHTTPClient()
 
 	var apiURL string
-	if version == "latest" {
+	switch version {
+	case "latest":
 		apiURL = "https://api.github.com/repos/reearth/reearth-visualizer/releases/latest"
-	} else if version == "nightly" {
+	case "nightly":
 		apiURL = "https://api.github.com/repos/reearth/reearth-visualizer/releases/tags/workbench-nightly"
-	} else {
+	default:
 		// Specific version
 		tag := version
 		if tag[0] != 'v' {
@@ -174,7 +175,7 @@ func resolveDownloadURL(ctx context.Context, f *core.Factory, version string) (s
 		return fmt.Sprintf("https://github.com/reearth/reearth-visualizer/releases/download/%s/reearth-viz-workbench_%s.tar.gz", tag, tag), nil
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "GET", apiURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
 	if err != nil {
 		return "", err
 	}
@@ -226,7 +227,7 @@ func resolveDownloadURL(ctx context.Context, f *core.Factory, version string) (s
 func downloadAndExtract(ctx context.Context, f *core.Factory, url, destDir string) error {
 	client := f.PublicHTTPClient()
 
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return err
 	}
@@ -295,7 +296,7 @@ func startDevServer(ctx context.Context, f *core.Factory, workbenchPath, pluginD
 	addr := fmt.Sprintf("127.0.0.1:%d", port)
 	url := fmt.Sprintf("http://%s/workbench.html?dev-plugin=http://localhost:5173", addr)
 
-	f.IO.Success(fmt.Sprintf("Development server started at %s", url))
+	f.IO.Success("Development server started at %s", url)
 	f.IO.Info("Press Ctrl+C to stop")
 	fmt.Fprintln(f.IO.Out)
 

@@ -97,7 +97,7 @@ func runInit(ctx context.Context, f *core.Factory, opts *initOptions) error {
 	}
 
 	f.IO.StopProgress()
-	f.IO.Success(fmt.Sprintf("Plugin initialized successfully in %s", opts.dir))
+	f.IO.Success("Plugin initialized successfully in %s", opts.dir)
 	f.IO.Info("")
 	f.IO.Info("Done. Now run:")
 	if opts.dir != "." {
@@ -152,7 +152,7 @@ func checkDirectory(dir string) error {
 func downloadTemplate(ctx context.Context, f *core.Factory, url string) ([]byte, error) {
 	client := f.PublicHTTPClient()
 
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
 	}
