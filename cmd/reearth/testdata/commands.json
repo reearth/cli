@@ -87,6 +87,54 @@
     "runnable": true
   },
   {
+    "path": "reearth vis",
+    "usage": "reearth vis [flags]",
+    "short": "Re:Earth Visualizer tools (demo)",
+    "runnable": false
+  },
+  {
+    "path": "reearth vis plugin",
+    "usage": "reearth vis plugin [flags]",
+    "short": "Plugin development tools",
+    "runnable": false
+  },
+  {
+    "path": "reearth vis plugin init",
+    "usage": "reearth vis plugin init [directory] [flags]",
+    "short": "Initialize a new plugin from a template",
+    "runnable": true,
+    "flags": [
+      {
+        "name": "template",
+        "shorthand": "t",
+        "type": "string",
+        "default": "ts",
+        "usage": "Template to use (currently only 'ts' is supported)"
+      }
+    ]
+  },
+  {
+    "path": "reearth vis plugin dev",
+    "usage": "reearth vis plugin dev [plugin-directory] [flags]",
+    "short": "Start plugin development server",
+    "runnable": true,
+    "flags": [
+      {
+        "name": "port",
+        "shorthand": "p",
+        "type": "int",
+        "default": "3000",
+        "usage": "Port to run the workbench server on"
+      },
+      {
+        "name": "version",
+        "type": "string",
+        "default": "latest",
+        "usage": "Workbench version (latest, nightly, or specific version like v1.0.0)"
+      }
+    ]
+  },
+  {
     "path": "reearth login",
     "usage": "reearth login [account] [flags]",
     "short": "Sign in and add or refresh an account",
