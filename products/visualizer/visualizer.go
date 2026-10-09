@@ -28,10 +28,17 @@ func (p Product) Command(f *core.Factory) *cobra.Command {
 		Short:   p.Short(),
 		Long: `Manage Re:Earth Visualizer projects and plugins.
 
-Commands call the Visualizer API as the current account. Until they are
-added, use "reearth api visualizer <path>" to call the API directly, e.g.
-"reearth api visualizer /workspaces/<workspace-id>/projects".`,
+A workspace holds projects. Each project has one scene, where layers, widgets
+and installed plugins live. "project" and "plugin push/list/uninstall" call
+the Visualizer API as the current account; "plugin init/validate/pack" work
+locally.
+
+The workspace comes from --workspace, REEARTH_VISUALIZER_WORKSPACE,
+.reearth.yaml, then the account's default. The project comes from the
+argument or --project, REEARTH_VISUALIZER_PROJECT, then visualizer.project in
+.reearth.yaml. For anything else, call the API directly with
+"reearth api visualizer <path>".`,
 	}
-	cmd.AddCommand(newCmdPlugin(f))
+	cmd.AddCommand(newCmdProject(f), newCmdStory(f), newCmdPlugin(f))
 	return cmd
 }

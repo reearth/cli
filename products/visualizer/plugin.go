@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -47,14 +48,20 @@ type manifestExtension struct {
 func newCmdPlugin(f *core.Factory) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "plugin",
-		Short: "Create, check and package Visualizer plugins",
-		Long: `Create, check and package Visualizer plugins.
+		Short: "Create, package and install Visualizer plugins",
+		Long: `Create, package and install Visualizer plugins.
 
 A plugin is a directory with reearth.yml and one <extension-id>.js per
 extension. The server keeps only reearth.yml and .js files, so HTML and CSS
-must live inside the JS.`,
+must live inside the JS.
+
+init, validate and pack work locally and need no login. push, list and
+uninstall act on a project's installed plugins as the current account.`,
 	}
-	cmd.AddCommand(newCmdPluginInit(f), newCmdPluginValidate(f), newCmdPluginPack(f))
+	cmd.AddCommand(
+		newCmdPluginInit(f), newCmdPluginValidate(f), newCmdPluginPack(f),
+		newCmdPluginPush(f), newCmdPluginList(f), newCmdPluginUninstall(f),
+	)
 	return cmd
 }
 
@@ -256,7 +263,13 @@ func writeZip(dir, out string) (n int, err error) {
 			err = cerr
 		}
 	}()
-	zw := zip.NewWriter(file)
+	return zipPlugin(dir, file, absOut)
+}
+
+// zipPlugin writes reearth.yml and every .js file under dir to w, skipping
+// the file at skip (an absolute path, or ""). It returns the number of files written.
+func zipPlugin(dir string, w io.Writer, skip string) (n int, err error) {
+	zw := zip.NewWriter(w)
 	err = filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -268,7 +281,7 @@ func writeZip(dir, out string) (n int, err error) {
 			}
 			return nil
 		}
-		if abs, _ := filepath.Abs(path); abs == absOut {
+		if abs, _ := filepath.Abs(path); abs == skip {
 			return nil
 		}
 		if rel != manifestFile && filepath.Ext(path) != ".js" {
