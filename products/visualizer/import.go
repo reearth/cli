@@ -29,6 +29,9 @@ const (
 	maxImportSize = 500 << 20
 )
 
+// importPollInterval is how often waitForImport checks the import status.
+var importPollInterval = 2 * time.Second
+
 type importChunkResponse struct {
 	ProjectID string `json:"projectId"`
 	Received  int    `json:"received"`
@@ -204,7 +207,7 @@ func waitForImport(ctx context.Context, f *core.Factory, c *client, projectID st
 		}
 		select {
 		case <-ctx.Done():
-		case <-time.After(2 * time.Second):
+		case <-time.After(importPollInterval):
 			continue
 		}
 		break
