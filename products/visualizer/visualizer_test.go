@@ -458,6 +458,8 @@ func TestProjectImport(t *testing.T) {
 	}
 	next := "p-ok"
 	api := newFakeAPI(t, map[string]http.HandlerFunc{
+		// This server imports through chunks, as a self-hosted one does.
+		"POST /workspaces/ws1/projects/import-url": apiError(http.StatusNotImplemented, "unsupported", "use chunked upload"),
 		"POST /workspaces/ws1/projects/import": func(w http.ResponseWriter, r *http.Request) {
 			_ = r.ParseMultipartForm(32 << 20)
 			done := r.FormValue("chunk_num") == "1" || r.FormValue("total_chunks") == "1"
@@ -494,7 +496,7 @@ func TestProjectImport(t *testing.T) {
 	}
 	var chunks []importChunk
 	for _, req := range api.reqs() {
-		if req.Method == http.MethodPost {
+		if req.Path == "/workspaces/ws1/projects/import" {
 			chunks = append(chunks, parseImportChunk(t, req))
 		}
 	}
@@ -527,8 +529,10 @@ func TestProjectImport(t *testing.T) {
 	if r := run(t, "vis", "project", "import", "small.zip", "--no-wait"); r.code != 0 || r.out != "p-ok\n" {
 		t.Fatalf("--no-wait: %+v", r)
 	}
-	if got := api.reqs()[before:]; len(got) != 1 || got[0].Method != http.MethodPost {
-		t.Fatalf("--no-wait requests: %+v", got)
+	for _, got := range api.reqs()[before:] {
+		if got.Method != http.MethodPost {
+			t.Fatalf("--no-wait polled: %+v", got)
+		}
 	}
 
 	// A file that is not a zip is refused before any upload.
@@ -541,6 +545,79 @@ func TestProjectImport(t *testing.T) {
 	}
 	if len(api.reqs()) != before {
 		t.Fatal("uploaded a file that is not a zip")
+	}
+}
+
+func TestProjectImportSignedURL(t *testing.T) {
+	importPollInterval = time.Millisecond
+	t.Cleanup(func() { importPollInterval = 2 * time.Second })
+
+	// A fake storage bucket behind the signed URL. The first upload attempt
+	// gets a temporary error, which the CLI retries.
+	var mu sync.Mutex
+	var uploads [][]byte
+	attempts := 0
+	storage := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPut || r.URL.Path != "/bucket/import/x.zip" || r.URL.Query().Get("sig") != "abc" {
+			t.Errorf("unexpected upload %s %s", r.Method, r.URL)
+		}
+		if r.Header.Get("Authorization") != "" {
+			t.Error("the Re:Earth token was sent to storage")
+		}
+		if ct := r.Header.Get("Content-Type"); ct != "application/octet-stream" {
+			t.Errorf("Content-Type = %q", ct)
+		}
+		b, _ := io.ReadAll(r.Body)
+		mu.Lock()
+		defer mu.Unlock()
+		attempts++
+		if attempts == 1 {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		uploads = append(uploads, b)
+	}))
+	t.Cleanup(storage.Close)
+
+	polls := 0
+	api := newFakeAPI(t, map[string]http.HandlerFunc{
+		"POST /workspaces/ws1/projects/import-url": func(w http.ResponseWriter, _ *http.Request) {
+			writeJSON(w, http.StatusCreated, map[string]any{
+				"projectId": "p-new", "uploadUrl": storage.URL + "/bucket/import/x.zip?sig=abc",
+				"contentType": "application/octet-stream", "expiresAt": "2026-10-13T00:15:00Z",
+			})
+		},
+		"POST /workspaces/ws1/projects/import": func(w http.ResponseWriter, _ *http.Request) {
+			t.Error("used chunked upload on a server with upload URLs")
+		},
+		"GET /projects/p-new": func(w http.ResponseWriter, _ *http.Request) {
+			p := projectJSON("p-new", "Imported")
+			p["importStatus"] = map[bool]string{true: "UPLOADING", false: "SUCCESS"}[polls == 0]
+			polls++
+			writeJSON(w, http.StatusOK, p)
+		},
+	})
+	setup(t, api, envvar.Map{"REEARTH_VISUALIZER_WORKSPACE": "ws1"})
+
+	data := []byte("PK\x03\x04 the project zip")
+	if err := os.WriteFile("p.zip", data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	r := run(t, "vis", "project", "import", "p.zip", "--jq", ".id")
+	if r.code != 0 || strings.TrimSpace(r.out) != "p-new" {
+		t.Fatalf("%+v", r)
+	}
+	if len(uploads) != 1 || !bytes.Equal(uploads[0], data) {
+		t.Fatalf("uploaded %d times: %q", len(uploads), uploads)
+	}
+
+	// A rejected upload fails the command.
+	storage.Config.Handler = http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte("SignatureDoesNotMatch"))
+	})
+	if r := run(t, "vis", "project", "import", "p.zip"); r.code != cmdutil.ExitError || !strings.Contains(r.errOut, "SignatureDoesNotMatch") {
+		t.Fatalf("rejected upload: %+v", r)
 	}
 }
 

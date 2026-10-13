@@ -49,10 +49,12 @@ func newCmdProjectImport(f *core.Factory) *cobra.Command {
 		Long: `Import a project from a zip made by "project export" or the web app's
 export, as a new project in the workspace.
 
-The zip is uploaded in chunks, then the server imports it in the background.
-The command waits for the import to finish and prints the new project; with
---no-wait it prints the project ID right after the upload, and "project view
-<id>" shows the import status (UPLOADING, PROCESSING, SUCCESS or FAILED).`,
+The zip is uploaded the way the server's web app does: straight to storage
+through a signed URL on the hosted service, or in chunks to a self-hosted
+server. Then the server imports it in the background. The command waits for
+the import to finish and prints the new project; with --no-wait it prints the
+project ID right after the upload, and "project view <id>" shows the import
+status (UPLOADING, PROCESSING, SUCCESS or FAILED).`,
 		Example: `  $ reearth vis project import city-parks.zip
   $ reearth vis project import city-parks.zip --workspace 01hq... --no-wait`,
 		Args: cobra.ExactArgs(1),
@@ -90,24 +92,31 @@ The command waits for the import to finish and prints the new project; with
 				return err
 			}
 
-			res, err := uploadImport(cmd.Context(), f, c, ws, file, size)
+			projectID, uploaded, err := uploadImportToURL(cmd.Context(), f, c, ws, file, size)
 			if err != nil {
 				return err
+			}
+			if !uploaded {
+				res, err := uploadImport(cmd.Context(), f, c, ws, file, size)
+				if err != nil {
+					return err
+				}
+				projectID = res.ProjectID
 			}
 			if noWait {
 				p, err := f.Printer()
 				if err != nil {
 					return err
 				}
-				return p.Print(map[string]any{"projectId": res.ProjectID, "importStatus": "PROCESSING"}, func() error {
+				return p.Print(map[string]any{"projectId": projectID, "importStatus": "PROCESSING"}, func() error {
 					f.IO.Success("Uploaded %s; the import is running", path)
-					f.IO.Hint("check it with: reearth vis project view %s", res.ProjectID)
-					_, err := fmt.Fprintln(f.IO.Out, res.ProjectID)
+					f.IO.Hint("check it with: reearth vis project view %s", projectID)
+					_, err := fmt.Fprintln(f.IO.Out, projectID)
 					return err
 				})
 			}
 
-			pr, err := waitForImport(cmd.Context(), f, c, res.ProjectID, timeout)
+			pr, err := waitForImport(cmd.Context(), f, c, projectID, timeout)
 			if err != nil {
 				return err
 			}
@@ -125,6 +134,52 @@ The command waits for the import to finish and prints the new project; with
 func readFull(r io.Reader, b []byte) error {
 	_, err := io.ReadFull(r, b)
 	return err
+}
+
+type importUploadResponse struct {
+	ProjectID   string `json:"projectId"`
+	UploadURL   string `json:"uploadUrl"`
+	ContentType string `json:"contentType"`
+}
+
+// uploadImportToURL uploads the zip through a signed storage URL, as the
+// hosted web app does. It reports false, without an error, when the server
+// imports through chunked upload instead.
+func uploadImportToURL(ctx context.Context, f *core.Factory, c *client, ws string, file io.ReaderAt, size int64) (string, bool, error) {
+	var res importUploadResponse
+	err := c.doJSON(ctx, http.MethodPost, "/workspaces/"+url.PathEscape(ws)+"/projects/import-url", nil, nil, &res)
+	if e := (*cmdutil.Error)(nil); errors.As(err, &e) &&
+		// "not_found" covers servers from before this endpoint.
+		(e.Code == "visualizer.unsupported" || e.Code == "visualizer.not_found") {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, res.UploadURL, io.NewSectionReader(file, 0, size))
+	if err != nil {
+		return "", false, err
+	}
+	// Each attempt reads the file from the start, so the client can retry
+	// the upload after a temporary storage error.
+	req.GetBody = func() (io.ReadCloser, error) { return io.NopCloser(io.NewSectionReader(file, 0, size)), nil }
+	req.ContentLength = size
+	req.Header.Set("Content-Type", res.ContentType)
+	f.IO.StartProgress("Uploading…")
+	// The URL carries its own authorization: the Re:Earth token must not go
+	// to storage, so this uses the client without credentials.
+	resp, err := f.PublicHTTPClient().Do(req)
+	f.IO.StopProgress()
+	if err != nil {
+		return "", false, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		b, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		return "", false, fmt.Errorf("upload to storage failed: %s: %s", resp.Status, bytes.TrimSpace(b))
+	}
+	return res.ProjectID, true, nil
 }
 
 // uploadImport sends the zip in chunks, in order, and returns the response
