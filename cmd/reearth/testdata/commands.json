@@ -87,6 +87,150 @@
     "runnable": true
   },
   {
+    "path": "reearth visualizer",
+    "usage": "reearth visualizer [flags]",
+    "short": "Develop Re:Earth Visualizer plugins",
+    "aliases": [
+      "vis"
+    ],
+    "runnable": false
+  },
+  {
+    "path": "reearth visualizer plugin",
+    "usage": "reearth visualizer plugin [flags]",
+    "short": "Create, run and package Visualizer plugins",
+    "runnable": false
+  },
+  {
+    "path": "reearth visualizer plugin init",
+    "usage": "reearth visualizer plugin init [dir] [flags]",
+    "short": "Create a plugin from the js or ts template",
+    "runnable": true,
+    "flags": [
+      {
+        "name": "extension-id",
+        "type": "string",
+        "usage": "Extension ID; for js also the .js file name (default: plugin ID)"
+      },
+      {
+        "name": "id",
+        "type": "string",
+        "usage": "Plugin ID (default: directory name)"
+      },
+      {
+        "name": "name",
+        "type": "string",
+        "usage": "Display name (default: plugin ID)"
+      },
+      {
+        "name": "refresh",
+        "type": "bool",
+        "usage": "Download the ts template again instead of using the cache"
+      },
+      {
+        "name": "template",
+        "type": "string",
+        "default": "js",
+        "usage": "Template: js or ts"
+      },
+      {
+        "name": "type",
+        "type": "string",
+        "default": "widget",
+        "usage": "Extension type: widget, storyBlock, infoboxBlock"
+      }
+    ]
+  },
+  {
+    "path": "reearth visualizer plugin add",
+    "usage": "reearth visualizer plugin add [extension-id] [flags]",
+    "short": "Add an extension to a plugin",
+    "runnable": true,
+    "flags": [
+      {
+        "name": "dir",
+        "type": "string",
+        "default": ".",
+        "usage": "Plugin directory"
+      },
+      {
+        "name": "name",
+        "type": "string",
+        "usage": "Display name (default: extension ID)"
+      },
+      {
+        "name": "type",
+        "type": "string",
+        "default": "widget",
+        "usage": "Extension type: widget, storyBlock, infoboxBlock"
+      }
+    ]
+  },
+  {
+    "path": "reearth visualizer plugin dev",
+    "usage": "reearth visualizer plugin dev [flags]",
+    "short": "Serve a plugin locally, reloading on every save",
+    "runnable": true,
+    "flags": [
+      {
+        "name": "dir",
+        "type": "string",
+        "default": ".",
+        "usage": "Plugin directory"
+      },
+      {
+        "name": "no-open",
+        "type": "bool",
+        "usage": "Don't open the viewer in a browser"
+      },
+      {
+        "name": "port",
+        "type": "int",
+        "default": "5180",
+        "usage": "Port to listen on (0 picks a free one)"
+      },
+      {
+        "name": "viewer",
+        "type": "string",
+        "usage": "Serve this Plugin Playground build and open it"
+      }
+    ]
+  },
+  {
+    "path": "reearth visualizer plugin validate",
+    "usage": "reearth visualizer plugin validate [flags]",
+    "short": "Check a plugin's manifest and files before uploading",
+    "runnable": true,
+    "flags": [
+      {
+        "name": "dir",
+        "type": "string",
+        "default": ".",
+        "usage": "Plugin directory"
+      }
+    ]
+  },
+  {
+    "path": "reearth visualizer plugin pack",
+    "usage": "reearth visualizer plugin pack [flags]",
+    "short": "Zip a plugin for uploading to Visualizer",
+    "runnable": true,
+    "flags": [
+      {
+        "name": "dir",
+        "type": "string",
+        "default": ".",
+        "usage": "Plugin directory"
+      },
+      {
+        "name": "output",
+        "shorthand": "o",
+        "type": "string",
+        "usage": "Zip file to write (default: \u003cdir\u003e/package/\u003cid\u003e-\u003cversion\u003e.zip)"
+      }
+    ]
+  },
+  {
     "path": "reearth login",
     "usage": "reearth login [account] [flags]",
     "short": "Sign in and add or refresh an account",

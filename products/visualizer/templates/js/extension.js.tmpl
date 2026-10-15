@@ -1,0 +1,21 @@
+// Runs in the plugin sandbox (QuickJS): Re:Earth APIs only, no DOM or fetch.
+// UI, DOM and network access belong in the iframe passed to reearth.ui.show.
+reearth.ui.show(`
+<style>
+  body { margin: 0; font-family: sans-serif; }
+  .box { padding: 12px; background: #fff; border-radius: 6px; }
+</style>
+<div class="box" id="message"></div>
+<script>
+  window.addEventListener("message", (e) => {
+    if (e.data?.type !== "update") return;
+    document.getElementById("message").textContent = e.data.message;
+  });
+</script>
+`);
+
+// A field's defaultValue is not returned until the user sets it, so fall
+// back in code. Visualizer runs the plugin again when a property changes.
+const ext = reearth.extension.widget ?? reearth.extension.block;
+const message = ext?.property?.default?.message ?? {{quote (print "Hello from " .Name)}};
+reearth.ui.postMessage({ type: "update", message });
