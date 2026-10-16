@@ -310,12 +310,10 @@ func checkConflicts(dir string, files map[string][]byte) error {
 
 // render returns the files to write, keyed by slash-separated path.
 func (o *initOptions) render(ctx context.Context, x *fetcher) (map[string][]byte, error) {
-	switch {
-	case o.Template == "ts":
+	if o.Template == "ts" {
 		return renderTS(ctx, x, o)
-	default:
-		return o.renderJS()
 	}
+	return o.renderJS()
 }
 
 // renderJS writes reearth.yml and one <extension-id>.js per extension from
