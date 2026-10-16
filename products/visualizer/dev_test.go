@@ -38,7 +38,7 @@ func TestDevServer(t *testing.T) {
 	defer srv.Close()
 
 	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
-	get := func(path string) (*http.Response, string) {
+	get := func(path string) (int, http.Header, string) {
 		t.Helper()
 		resp, err := client.Get(srv.URL + path)
 		if err != nil {
@@ -46,31 +46,31 @@ func TestDevServer(t *testing.T) {
 		}
 		defer func() { _ = resp.Body.Close() }()
 		b, _ := io.ReadAll(resp.Body)
-		return resp, string(b)
+		return resp.StatusCode, resp.Header, string(b)
 	}
 
 	// / opens the viewer pointed at this server's plugin.
-	resp, _ := get("/")
-	if loc := resp.Header.Get("Location"); resp.StatusCode != http.StatusFound || loc != "/playground.html?dev-plugin="+url.QueryEscape(srv.URL+"/plugin") {
-		t.Errorf("/ = %d %s", resp.StatusCode, loc)
+	status, header, _ := get("/")
+	if loc := header.Get("Location"); status != http.StatusFound || loc != "/playground.html?dev-plugin="+url.QueryEscape(srv.URL+"/plugin") {
+		t.Errorf("/ = %d %s", status, loc)
 	}
-	if resp, body := get("/" + playgroundPage); resp.StatusCode != 200 || body != "<html>playground</html>" {
-		t.Errorf("viewer = %d %q", resp.StatusCode, body)
+	if status, _, body := get("/" + playgroundPage); status != http.StatusOK || body != "<html>playground</html>" {
+		t.Errorf("viewer = %d %q", status, body)
 	}
-	if resp, body := get("/reearth_config.json"); resp.StatusCode != 200 || body != "{}" {
-		t.Errorf("config = %d %q", resp.StatusCode, body)
+	if status, _, body := get("/reearth_config.json"); status != http.StatusOK || body != "{}" {
+		t.Errorf("config = %d %q", status, body)
 	}
 	for path, wantBody := range map[string]string{
 		"/plugin/a.js":        "reearth.ui.show('a');",
 		"/plugin/reearth.yml": "id: p\n",
 	} {
-		resp, body := get(path)
-		if resp.StatusCode != 200 || !strings.HasPrefix(body, wantBody) || resp.Header.Get("Access-Control-Allow-Origin") != "*" {
-			t.Errorf("%s = %d %q (CORS %q)", path, resp.StatusCode, body, resp.Header.Get("Access-Control-Allow-Origin"))
+		status, header, body := get(path)
+		if cors := header.Get("Access-Control-Allow-Origin"); status != http.StatusOK || !strings.HasPrefix(body, wantBody) || cors != "*" {
+			t.Errorf("%s = %d %q (CORS %q)", path, status, body, cors)
 		}
 	}
-	if resp, _ := get("/plugin/missing.js"); resp.StatusCode != http.StatusNotFound {
-		t.Errorf("missing = %d", resp.StatusCode)
+	if status, _, _ := get("/plugin/missing.js"); status != http.StatusNotFound {
+		t.Errorf("missing = %d", status)
 	}
 
 	// Only what a published plugin exposes: no secrets, sources or dependencies.
@@ -81,8 +81,8 @@ func TestDevServer(t *testing.T) {
 	_ = os.MkdirAll(filepath.Join(dir, ".git"), 0o755)
 	write(filepath.Join(dir, ".git"), "hook.js", "x")
 	for _, p := range []string{"/plugin/.env", "/plugin/notes.txt", "/plugin/node_modules/x/index.js", "/plugin/.git/hook.js", "/plugin/../a.js", "/plugin/%2e%2e/a.js"} {
-		if resp, body := get(p); resp.StatusCode == http.StatusOK && body != "reearth.ui.show('a');" {
-			t.Errorf("%s = %d %q", p, resp.StatusCode, body)
+		if status, _, body := get(p); status == http.StatusOK && body != "reearth.ui.show('a');" {
+			t.Errorf("%s = %d %q", p, status, body)
 		}
 	}
 
