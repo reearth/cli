@@ -133,6 +133,55 @@ func TestDevPaths(t *testing.T) {
 	}
 }
 
+func TestViewerPage(t *testing.T) {
+	for raw, want := range map[string]string{
+		"http://localhost:3000":                 "http://localhost:3000/playground.html",
+		"http://localhost:3000/":                "http://localhost:3000/playground.html",
+		"http://localhost:3000/web":             "http://localhost:3000/web/playground.html",
+		"http://localhost:3000/workbench.html":  "http://localhost:3000/workbench.html",
+		"https://example.com/p.html?lang=ja":    "https://example.com/p.html?lang=ja",
+		"http://localhost:3000/?dev-plugin=old": "http://localhost:3000/playground.html?dev-plugin=old",
+	} {
+		u, err := viewerPage(raw)
+		if err != nil || u.String() != want {
+			t.Errorf("viewerPage(%q) = %v %v, want %s", raw, u, err, want)
+		}
+	}
+	for _, raw := range []string{"localhost:3000", "/playground.html", "file:///tmp/playground.html", "http://"} {
+		if _, err := viewerPage(raw); err == nil {
+			t.Errorf("viewerPage(%q) should fail", raw)
+		}
+	}
+}
+
+// dev opens a Plugin Playground it finds, and not another app on the port.
+func TestDetectViewer(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/" + playgroundPage:
+			_, _ = io.WriteString(rw, "<html><head>"+playgroundTitle+"</head></html>")
+		case "/other.html":
+			_, _ = io.WriteString(rw, "<html><head><title>Another app</title></head></html>")
+		default:
+			http.NotFound(rw, r)
+		}
+	}))
+	defer srv.Close()
+	if u := detectViewer(context.Background(), srv.URL+"/"+playgroundPage); u == nil || u.String() != srv.URL+"/"+playgroundPage {
+		t.Errorf("playground = %v", u)
+	}
+	for _, p := range []string{"/other.html", "/missing.html"} {
+		if u := detectViewer(context.Background(), srv.URL+p); u != nil {
+			t.Errorf("%s = %v, want nil", p, u)
+		}
+	}
+	addr := srv.Listener.Addr().String()
+	srv.Close()
+	if u := detectViewer(context.Background(), "http://"+addr+"/"+playgroundPage); u != nil {
+		t.Errorf("closed server = %v, want nil", u)
+	}
+}
+
 // Without --viewer, only the plugin is served.
 func TestDevServerWithoutViewer(t *testing.T) {
 	dir := t.TempDir()

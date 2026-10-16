@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"net"
 	"net/http"
@@ -26,15 +27,25 @@ import (
 // (reearth-visualizer/web `yarn build:playground`).
 const playgroundPage = "playground.html"
 
+// defaultViewerURL is where `yarn playground` in reearth-visualizer/web
+// serves the Plugin Playground. dev opens it when it is running and no
+// viewer is given.
+const defaultViewerURL = "http://localhost:3000/" + playgroundPage
+
+// playgroundTitle tells the Plugin Playground apart from another app on the
+// same port; a vite server answers any .html path with its index page.
+const playgroundTitle = "<title>Re:Earth Visualizer Workbench</title>"
+
 type devOptions struct {
 	Dir       string `json:"dir"`
 	Template  string `json:"template"`
 	URL       string `json:"url,omitempty"`
 	PluginURL string `json:"pluginUrl"`
 
-	port   int
-	noOpen bool
-	viewer string
+	port      int
+	noOpen    bool
+	viewer    string
+	viewerURL string
 }
 
 func newCmdPluginDev(f *core.Factory) *cobra.Command {
@@ -48,7 +59,11 @@ files change. Stop it with Ctrl+C.
 The plugin is served at <url>/plugin. Open a Visualizer viewer with
 ?dev-plugin=<url>/plugin to load it, such as a Plugin Playground build of
 reearth-visualizer (web: ` + "`yarn build:playground`" + `). With --viewer, that build is
-served from the same server and opened in a browser.
+served from the same server and opened in a browser. With --viewer-url, a
+viewer already running elsewhere, such as ` + "`yarn playground`" + ` in
+reearth-visualizer/web, is opened with ?dev-plugin= set; a URL without an
+.html page opens its playground.html. With neither, a Plugin Playground
+running at ` + defaultViewerURL + ` is opened if there is one.
 
   <url>/plugin/reearth.yml        the manifest
   <url>/plugin/<extension-id>.js  each extension
@@ -61,9 +76,11 @@ loopback name. With --json, the URLs are printed as JSON once it is ready.
 
   js plugin     serves reearth.yml and <extension-id>.js from --dir
   ts template   serves dist/; keep ` + "`yarn dev-build`" + ` (or run ` + "`yarn build`" + `) running`,
-		Example: `  $ reearth visualizer plugin dev
+		Example: `  # with ` + "`yarn playground`" + ` running in reearth-visualizer/web, opens it
+  $ reearth visualizer plugin dev
   $ reearth visualizer plugin dev --dir my-plugin --port 8080
-  $ reearth visualizer plugin dev --viewer ../reearth-visualizer/web/dist-playground`,
+  $ reearth visualizer plugin dev --viewer ../reearth-visualizer/web/dist-playground
+  $ reearth visualizer plugin dev --viewer-url http://localhost:3000`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return o.run(cmd.Context(), f)
@@ -74,6 +91,7 @@ loopback name. With --json, the URLs are printed as JSON once it is ready.
 	fl.IntVar(&o.port, "port", 5180, "Port to listen on (0 picks a free one)")
 	fl.BoolVar(&o.noOpen, "no-open", false, "Don't open the viewer in a browser")
 	fl.StringVar(&o.viewer, "viewer", "", "Serve this Plugin Playground build and open it")
+	fl.StringVar(&o.viewerURL, "viewer-url", "", "Open the Plugin Playground running at this URL, such as `yarn playground`")
 	return cmd
 }
 
@@ -96,11 +114,23 @@ func (o *devOptions) run(ctx context.Context, f *core.Factory) error {
 		return err
 	}
 	o.Template = template
+	if o.viewer != "" && o.viewerURL != "" {
+		return cmdutil.FlagErrorf("--viewer and --viewer-url cannot be used together")
+	}
 	if o.viewer != "" {
 		if _, err := os.Stat(filepath.Join(o.viewer, playgroundPage)); err != nil {
 			return cmdutil.NewError(cmdutil.ExitNotFound, "visualizer.viewer_not_found",
 				fmt.Sprintf("%s not found in %s", playgroundPage, o.viewer), "build it in reearth-visualizer/web with `yarn build:playground`")
 		}
+	}
+	var page *url.URL
+	switch {
+	case o.viewerURL != "":
+		if page, err = viewerPage(o.viewerURL); err != nil {
+			return err
+		}
+	case o.viewer == "":
+		page = detectViewer(ctx, defaultViewerURL)
 	}
 
 	ln, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", o.port))
@@ -111,6 +141,11 @@ func (o *devOptions) run(ctx context.Context, f *core.Factory) error {
 	o.PluginURL = base + "plugin"
 	if o.viewer != "" {
 		o.URL = playgroundURL(base, o.PluginURL)
+	} else if page != nil {
+		q := page.Query()
+		q.Set("dev-plugin", o.PluginURL)
+		page.RawQuery = q.Encode()
+		o.URL = page.String()
 	}
 
 	w := newWatcher(manifest, root)
@@ -136,12 +171,17 @@ func (o *devOptions) run(ctx context.Context, f *core.Factory) error {
 	if err := pr.Print(o, func() error { return nil }); err != nil {
 		return err
 	}
-	if o.URL != "" {
+	switch {
+	case o.viewer != "":
 		f.IO.Success("Plugin Playground running at %s", f.IO.ErrColor().Bold(o.URL))
 		f.IO.Hint("Plugin served at %s (for ?dev-plugin=)", o.PluginURL)
-	} else {
+	case o.URL != "":
+		f.IO.Success("Plugin served at %s", f.IO.ErrColor().Bold(o.PluginURL))
+		f.IO.Hint("Open the Plugin Playground at %s", o.URL)
+	default:
 		f.IO.Success("Plugin served at %s", f.IO.ErrColor().Bold(o.PluginURL))
 		f.IO.Hint("Open a Visualizer viewer with ?dev-plugin=%s to load it", url.QueryEscape(o.PluginURL))
+		f.IO.Hint("Or run `yarn playground` in reearth-visualizer/web and rerun this to open it")
 	}
 	if template == "ts" {
 		f.IO.Hint("Serving the build in %s. Keep `yarn dev-build` running, or rerun `yarn build`, to update it", root)
@@ -162,6 +202,43 @@ func (o *devOptions) run(ctx context.Context, f *core.Factory) error {
 
 func playgroundURL(base, pluginURL string) string {
 	return base + playgroundPage + "?" + url.Values{"dev-plugin": {pluginURL}}.Encode()
+}
+
+// detectViewer returns pageURL if a Plugin Playground answers there, or nil.
+func detectViewer(ctx context.Context, pageURL string) *url.URL {
+	ctx, cancel := context.WithTimeout(ctx, time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, pageURL, nil)
+	if err != nil {
+		return nil
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil
+	}
+	defer func() { _ = resp.Body.Close() }()
+	b, err := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
+	if err != nil || resp.StatusCode != http.StatusOK || !strings.Contains(string(b), playgroundTitle) {
+		return nil
+	}
+	u, err := url.Parse(pageURL)
+	if err != nil {
+		return nil
+	}
+	return u
+}
+
+// viewerPage parses --viewer-url. A URL that names no .html page, such as
+// the root of `yarn playground`, gets the Plugin Playground page.
+func viewerPage(raw string) (*url.URL, error) {
+	u, err := url.Parse(raw)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		return nil, cmdutil.FlagErrorf("--viewer-url must be an http or https URL, such as http://localhost:3000")
+	}
+	if path.Ext(u.Path) != ".html" {
+		u.Path = strings.TrimSuffix(u.Path, "/") + "/" + playgroundPage
+	}
+	return u, nil
 }
 
 // devHandler serves the plugin at /plugin/ and, when viewer is set, that

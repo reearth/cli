@@ -193,6 +193,11 @@
         "name": "viewer",
         "type": "string",
         "usage": "Serve this Plugin Playground build and open it"
+      },
+      {
+        "name": "viewer-url",
+        "type": "string",
+        "usage": "Open the Plugin Playground running at this URL, such as `yarn playground`"
       }
     ]
   },
