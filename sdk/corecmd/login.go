@@ -182,6 +182,8 @@ func loginOAuth(ctx context.Context, f *core.Factory, cfg *config.Config, m *aut
 		IO:          f.IO,
 		OpenBrowser: f.OpenBrowser,
 		HTTPClient:  m.HTTPClient,
+		Hostname:    cfg.Hostname,
+		Port:        cfg.Port,
 	})
 	if err != nil {
 		return "", nil, err

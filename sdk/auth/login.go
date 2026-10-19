@@ -27,6 +27,10 @@ type LoginOptions struct {
 	HTTPClient *http.Client
 	// Timeout bounds the whole interactive login (default 10 minutes).
 	Timeout time.Duration
+	// Hostname is the hostname for the OAuth redirect listener (default: "localhost").
+	Hostname string
+	// Port fixes the loopback port for the OAuth redirect (0 = random).
+	Port int
 }
 
 // Login runs the selected flow and returns a token that includes a refresh token.
@@ -80,12 +84,16 @@ type callbackResult struct {
 // loopbackLogin implements the authorization code flow with PKCE (S256) and a
 // loopback redirect (RFC 8252 §7.3). PKCE is always sent.
 func loopbackLogin(ctx context.Context, o LoginOptions) (*oauth2.Token, error) {
-	ln, err := net.Listen("tcp4", "127.0.0.1:0")
+	host := o.Hostname
+	if host == "" {
+		host = "localhost"
+	}
+	ln, err := net.Listen("tcp", fmt.Sprintf("%s:%d", host, o.Port))
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", errLoopbackUnavailable, err)
 	}
 	port := ln.Addr().(*net.TCPAddr).Port
-	conf := o.Env.OAuth2Config(fmt.Sprintf("http://127.0.0.1:%d/callback", port))
+	conf := o.Env.OAuth2Config(fmt.Sprintf("http://%s:%d/callback", host, port))
 
 	verifier := oauth2.GenerateVerifier()
 	state := randomString()
