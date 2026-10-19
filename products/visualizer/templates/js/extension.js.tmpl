@@ -8,14 +8,24 @@ reearth.ui.show(`
 <div class="box" id="message"></div>
 <script>
   window.addEventListener("message", (e) => {
-    if (e.data?.type !== "update") return;
+    if (e.data?.type !== "message") return;
     document.getElementById("message").textContent = e.data.message;
   });
+  // Ask for Message now and every couple of seconds, so an edit in the
+  // inspector shows up without a reload.
+  const getMessage = () => parent.postMessage({ type: "getMessage" }, "*");
+  getMessage();
+  setInterval(getMessage, 2000);
 </script>
 `);
 
-// A field's defaultValue is not returned until the user sets it, so fall
-// back in code. Visualizer runs the plugin again when a property changes.
-const ext = reearth.extension.widget ?? reearth.extension.block;
-const message = ext?.property?.default?.message ?? {{quote (print "Hello from " .Name)}};
-reearth.ui.postMessage({ type: "update", message });
+// Reply with the current Message. reearth.extension is read on every request
+// because it returns the property as it is now; an object kept from an
+// earlier read does not change. A field's defaultValue is not returned until
+// the user sets it, so fall back in code.
+reearth.extension.on("message", (msg) => {
+  if (msg?.type !== "getMessage") return;
+  const ext = reearth.extension.widget ?? reearth.extension.block;
+  const message = ext?.property?.default?.message ?? {{quote (print "Hello from " .Name)}};
+  reearth.ui.postMessage({ type: "message", message });
+});
