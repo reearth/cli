@@ -24,7 +24,7 @@ func TestDevServer(t *testing.T) {
 	}
 	write(dir, manifestFile, "id: p\nname: P\nextensions:\n  - id: a\n    type: widget\n")
 	write(dir, "a.js", "reearth.ui.show('a');")
-	write(viewer, playgroundPage, "<html>playground</html>")
+	write(viewer, viewerHTMLPage, "<html>playground</html>")
 
 	template, manifest, root, err := devPaths(dir)
 	if err != nil || template != "js" || root != dir {
@@ -51,10 +51,10 @@ func TestDevServer(t *testing.T) {
 
 	// / opens the viewer pointed at this server's plugin.
 	status, header, _ := get("/")
-	if loc := header.Get("Location"); status != http.StatusFound || loc != "/playground.html?dev-plugin="+url.QueryEscape(srv.URL+"/plugin") {
+	if loc := header.Get("Location"); status != http.StatusFound || loc != "/workbench.html?dev-plugin="+url.QueryEscape(srv.URL+"/plugin") {
 		t.Errorf("/ = %d %s", status, loc)
 	}
-	if status, _, body := get("/" + playgroundPage); status != http.StatusOK || body != "<html>playground</html>" {
+	if status, _, body := get("/" + viewerHTMLPage); status != http.StatusOK || body != "<html>playground</html>" {
 		t.Errorf("viewer = %d %q", status, body)
 	}
 	if status, _, body := get("/reearth_config.json"); status != http.StatusOK || body != "{}" {
@@ -133,33 +133,33 @@ func TestDevPaths(t *testing.T) {
 	}
 }
 
-func TestViewerPage(t *testing.T) {
+func TestViewerPageURL(t *testing.T) {
 	for raw, want := range map[string]string{
-		"http://localhost:3000":                 "http://localhost:3000/playground.html",
-		"http://localhost:3000/":                "http://localhost:3000/playground.html",
-		"http://localhost:3000/web":             "http://localhost:3000/web/playground.html",
+		"http://localhost:3000":                 "http://localhost:3000/workbench.html",
+		"http://localhost:3000/":                "http://localhost:3000/workbench.html",
+		"http://localhost:3000/web":             "http://localhost:3000/web/workbench.html",
 		"http://localhost:3000/workbench.html":  "http://localhost:3000/workbench.html",
 		"https://example.com/p.html?lang=ja":    "https://example.com/p.html?lang=ja",
-		"http://localhost:3000/?dev-plugin=old": "http://localhost:3000/playground.html?dev-plugin=old",
+		"http://localhost:3000/?dev-plugin=old": "http://localhost:3000/workbench.html?dev-plugin=old",
 	} {
-		u, err := viewerPage(raw)
+		u, err := viewerPageURL(raw)
 		if err != nil || u.String() != want {
-			t.Errorf("viewerPage(%q) = %v %v, want %s", raw, u, err, want)
+			t.Errorf("viewerPageURL(%q) = %v %v, want %s", raw, u, err, want)
 		}
 	}
-	for _, raw := range []string{"localhost:3000", "/playground.html", "file:///tmp/playground.html", "http://"} {
-		if _, err := viewerPage(raw); err == nil {
-			t.Errorf("viewerPage(%q) should fail", raw)
+	for _, raw := range []string{"localhost:3000", "/workbench.html", "file:///tmp/workbench.html", "http://"} {
+		if _, err := viewerPageURL(raw); err == nil {
+			t.Errorf("viewerPageURL(%q) should fail", raw)
 		}
 	}
 }
 
-// dev opens a Plugin Playground it finds, and not another app on the port.
+// dev opens a viewer it finds, and not another app on the port.
 func TestDetectViewer(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/" + playgroundPage:
-			_, _ = io.WriteString(rw, "<html><head>"+playgroundTitle+"</head></html>")
+		case "/" + viewerHTMLPage:
+			_, _ = io.WriteString(rw, "<html><head>"+viewerTitle+"</head></html>")
 		case "/other.html":
 			_, _ = io.WriteString(rw, "<html><head><title>Another app</title></head></html>")
 		default:
@@ -167,8 +167,8 @@ func TestDetectViewer(t *testing.T) {
 		}
 	}))
 	defer srv.Close()
-	if u := detectViewer(context.Background(), srv.URL+"/"+playgroundPage); u == nil || u.String() != srv.URL+"/"+playgroundPage {
-		t.Errorf("playground = %v", u)
+	if u := detectViewer(context.Background(), srv.URL+"/"+viewerHTMLPage); u == nil || u.String() != srv.URL+"/"+viewerHTMLPage {
+		t.Errorf("viewer = %v", u)
 	}
 	for _, p := range []string{"/other.html", "/missing.html"} {
 		if u := detectViewer(context.Background(), srv.URL+p); u != nil {
@@ -177,7 +177,7 @@ func TestDetectViewer(t *testing.T) {
 	}
 	addr := srv.Listener.Addr().String()
 	srv.Close()
-	if u := detectViewer(context.Background(), "http://"+addr+"/"+playgroundPage); u != nil {
+	if u := detectViewer(context.Background(), "http://"+addr+"/"+viewerHTMLPage); u != nil {
 		t.Errorf("closed server = %v, want nil", u)
 	}
 }
@@ -191,9 +191,9 @@ func TestDevServerWithoutViewer(t *testing.T) {
 	srv := httptest.NewServer(devHandler("", filepath.Join(dir, manifestFile), dir, newWatcher(filepath.Join(dir, manifestFile), dir)))
 	defer srv.Close()
 	for path, want := range map[string]int{
-		"/plugin/reearth.yml": http.StatusOK,
-		"/":                   http.StatusNotFound,
-		"/" + playgroundPage:  http.StatusNotFound,
+		"/plugin/reearth.yml":  http.StatusOK,
+		"/":                    http.StatusNotFound,
+		"/" + viewerHTMLPage:   http.StatusNotFound,
 	} {
 		resp, err := http.Get(srv.URL + path)
 		if err != nil {

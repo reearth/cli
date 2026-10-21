@@ -1,7 +1,10 @@
 package visualizer
 
 import (
+	"archive/tar"
+	"compress/gzip"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -23,18 +26,32 @@ import (
 	"github.com/reearth/cli/sdk/core"
 )
 
-// playgroundPage is the page of a Plugin Playground build
-// (reearth-visualizer/web `yarn build:playground`).
-const playgroundPage = "playground.html"
+// viewerHTMLPage is the HTML page served by the viewer (workbench) build.
+const viewerHTMLPage = "workbench.html"
 
-// defaultViewerURL is where `yarn playground` in reearth-visualizer/web
-// serves the Plugin Playground. dev opens it when it is running and no
-// viewer is given.
-const defaultViewerURL = "http://localhost:3000/" + playgroundPage
+// defaultViewerURL is where the viewer dev server serves the workbench.
+// dev opens it when it is running and no viewer is given.
+const defaultViewerURL = "http://localhost:3000/" + viewerHTMLPage
 
-// playgroundTitle tells the Plugin Playground apart from another app on the
-// same port; a vite server answers any .html path with its index page.
-const playgroundTitle = "<title>Re:Earth Visualizer Workbench</title>"
+// viewerTitle identifies the viewer in a page response.
+const viewerTitle = "<title>Re:Earth Visualizer Workbench</title>"
+
+// viewerCacheDir is where downloaded viewer (workbench) builds are cached.
+const viewerCacheDir = "reearth-viz-workbench"
+
+// viewerManifestFile is the manifest file inside a viewer (workbench) build.
+const viewerManifestFile = "workbench-manifest.json"
+
+// maxExtractFileSize limits the size of individual files during extraction
+// to prevent decompression bombs.
+const maxExtractFileSize = 100 << 20 // 100 MB
+
+// viewerManifest describes a downloaded viewer build.
+type viewerManifest struct {
+	Version          string `json:"version"`
+	PluginAPIVersion string `json:"pluginApiVersion"`
+	Commit           string `json:"commit"`
+}
 
 type devOptions struct {
 	Dir       string `json:"dir"`
@@ -42,10 +59,12 @@ type devOptions struct {
 	URL       string `json:"url,omitempty"`
 	PluginURL string `json:"pluginUrl"`
 
-	port      int
-	noOpen    bool
-	viewer    string
-	viewerURL string
+	port          int
+	noOpen        bool
+	viewer        bool
+	viewerDir     string
+	viewerURL     string
+	viewerVersion string
 }
 
 func newCmdPluginDev(f *core.Factory) *cobra.Command {
@@ -57,13 +76,17 @@ func newCmdPluginDev(f *core.Factory) *cobra.Command {
 files change. Stop it with Ctrl+C.
 
 The plugin is served at <url>/plugin. Open a Visualizer viewer with
-?dev-plugin=<url>/plugin to load it, such as a Plugin Playground build of
-reearth-visualizer (web: ` + "`yarn build:playground`" + `). With --viewer, that build is
-served from the same server and opened in a browser. With --viewer-url, a
-viewer already running elsewhere, such as ` + "`yarn playground`" + ` in
-reearth-visualizer/web, is opened with ?dev-plugin= set; a URL without an
-.html page opens its playground.html. With neither, a Plugin Playground
-running at ` + defaultViewerURL + ` is opened if there is one.
+?dev-plugin=<url>/plugin to load it.
+
+With --viewer, the viewer is automatically downloaded from GitHub releases
+and served locally. The viewer is cached in ~/.reearth-cli/reearth-viz-workbench/
+and reused across runs. Use --viewer-version to specify a version (latest,
+nightly, or v1.0.0).
+
+With --viewer-dir, a local viewer build is served instead.
+With --viewer-url, a viewer already running elsewhere is opened with
+?dev-plugin= set. With neither, a viewer running at ` + defaultViewerURL + `
+is opened if there is one.
 
   <url>/plugin/reearth.yml        the manifest
   <url>/plugin/<extension-id>.js  each extension
@@ -76,10 +99,16 @@ loopback name. With --json, the URLs are printed as JSON once it is ready.
 
   js plugin     serves reearth.yml and <extension-id>.js from --dir
   ts template   serves dist/; keep ` + "`yarn dev-build`" + ` (or run ` + "`yarn build`" + `) running`,
-		Example: `  # with ` + "`yarn playground`" + ` running in reearth-visualizer/web, opens it
+		Example: `  # with a viewer running at localhost:3000, opens it
   $ reearth visualizer plugin dev
   $ reearth visualizer plugin dev --dir my-plugin --port 8080
-  $ reearth visualizer plugin dev --viewer ../reearth-visualizer/web/dist-playground
+
+  # auto-download and serve the viewer
+  $ reearth visualizer plugin dev --viewer
+  $ reearth visualizer plugin dev --viewer --viewer-version nightly
+
+  # serve a local viewer build
+  $ reearth visualizer plugin dev --viewer-dir ../reearth-visualizer/web/dist-playground
   $ reearth visualizer plugin dev --viewer-url http://localhost:3000`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -90,8 +119,10 @@ loopback name. With --json, the URLs are printed as JSON once it is ready.
 	fl.StringVar(&o.Dir, "dir", ".", "Plugin directory")
 	fl.IntVar(&o.port, "port", 5180, "Port to listen on (0 picks a free one)")
 	fl.BoolVar(&o.noOpen, "no-open", false, "Don't open the viewer in a browser")
-	fl.StringVar(&o.viewer, "viewer", "", "Serve this Plugin Playground build and open it")
-	fl.StringVar(&o.viewerURL, "viewer-url", "", "Open the Plugin Playground running at this URL, such as `yarn playground`")
+	fl.BoolVar(&o.viewer, "viewer", false, "Download and serve the Visualizer viewer")
+	fl.StringVar(&o.viewerDir, "viewer-dir", "", "Serve this local viewer build")
+	fl.StringVar(&o.viewerURL, "viewer-url", "", "Open the viewer running at this URL")
+	fl.StringVar(&o.viewerVersion, "viewer-version", "latest", "Viewer version to download: latest, nightly, or a specific version like v1.0.0")
 	return cmd
 }
 
@@ -114,22 +145,48 @@ func (o *devOptions) run(ctx context.Context, f *core.Factory) error {
 		return err
 	}
 	o.Template = template
-	if o.viewer != "" && o.viewerURL != "" {
-		return cmdutil.FlagErrorf("--viewer and --viewer-url cannot be used together")
+
+	// Validate mutually exclusive flags
+	flagCount := 0
+	if o.viewer {
+		flagCount++
 	}
-	if o.viewer != "" {
-		if _, err := os.Stat(filepath.Join(o.viewer, playgroundPage)); err != nil {
-			return cmdutil.NewError(cmdutil.ExitNotFound, "visualizer.viewer_not_found",
-				fmt.Sprintf("%s not found in %s", playgroundPage, o.viewer), "build it in reearth-visualizer/web with `yarn build:playground`")
+	if o.viewerDir != "" {
+		flagCount++
+	}
+	if o.viewerURL != "" {
+		flagCount++
+	}
+	if flagCount > 1 {
+		return cmdutil.FlagErrorf("--viewer, --viewer-dir and --viewer-url cannot be used together")
+	}
+
+	// Resolve the viewer directory
+	var viewerPath string
+	if o.viewer {
+		// Auto-download viewer
+		var vManifest *viewerManifest
+		viewerPath, vManifest, err = ensureViewer(ctx, f, o.viewerVersion)
+		if err != nil {
+			return err
 		}
+		f.IO.Success("Viewer ready (version: %s, plugin API: %s)", vManifest.Version, vManifest.PluginAPIVersion)
+	} else if o.viewerDir != "" {
+		// Use local viewer directory
+		if _, err := os.Stat(filepath.Join(o.viewerDir, viewerHTMLPage)); err != nil {
+			return cmdutil.NewError(cmdutil.ExitNotFound, "visualizer.viewer_not_found",
+				fmt.Sprintf("%s not found in %s", viewerHTMLPage, o.viewerDir), "build the viewer in reearth-visualizer/web with `yarn build:playground`")
+		}
+		viewerPath = o.viewerDir
 	}
+
 	var page *url.URL
 	switch {
 	case o.viewerURL != "":
-		if page, err = viewerPage(o.viewerURL); err != nil {
+		if page, err = viewerPageURL(o.viewerURL); err != nil {
 			return err
 		}
-	case o.viewer == "":
+	case viewerPath == "":
 		page = detectViewer(ctx, defaultViewerURL)
 	}
 
@@ -139,8 +196,8 @@ func (o *devOptions) run(ctx context.Context, f *core.Factory) error {
 	}
 	base := fmt.Sprintf("http://%s/", ln.Addr())
 	o.PluginURL = base + "plugin"
-	if o.viewer != "" {
-		o.URL = playgroundURL(base, o.PluginURL)
+	if viewerPath != "" {
+		o.URL = viewerOpenURL(base, o.PluginURL)
 	} else if page != nil {
 		q := page.Query()
 		q.Set("dev-plugin", o.PluginURL)
@@ -150,7 +207,7 @@ func (o *devOptions) run(ctx context.Context, f *core.Factory) error {
 
 	w := newWatcher(manifest, root)
 	srv := &http.Server{
-		Handler:           devHandler(o.viewer, manifest, root, w),
+		Handler:           devHandler(viewerPath, manifest, root, w),
 		ReadHeaderTimeout: 10 * time.Second,
 		// Requests (the event streams) end with the command.
 		BaseContext: func(net.Listener) context.Context { return ctx },
@@ -172,16 +229,16 @@ func (o *devOptions) run(ctx context.Context, f *core.Factory) error {
 		return err
 	}
 	switch {
-	case o.viewer != "":
-		f.IO.Success("Plugin Playground running at %s", f.IO.ErrColor().Bold(o.URL))
+	case viewerPath != "":
+		f.IO.Success("Viewer running at %s", f.IO.ErrColor().Bold(o.URL))
 		f.IO.Hint("Plugin served at %s (for ?dev-plugin=)", o.PluginURL)
 	case o.URL != "":
 		f.IO.Success("Plugin served at %s", f.IO.ErrColor().Bold(o.PluginURL))
-		f.IO.Hint("Open the Plugin Playground at %s", o.URL)
+		f.IO.Hint("Open the viewer at %s", o.URL)
 	default:
 		f.IO.Success("Plugin served at %s", f.IO.ErrColor().Bold(o.PluginURL))
-		f.IO.Hint("Open a Visualizer viewer with ?dev-plugin=%s to load it", url.QueryEscape(o.PluginURL))
-		f.IO.Hint("Or run `yarn playground` in reearth-visualizer/web and rerun this to open it")
+		f.IO.Hint("Open a viewer with ?dev-plugin=%s to load it", url.QueryEscape(o.PluginURL))
+		f.IO.Hint("Or run `reearth visualizer plugin dev --viewer` to auto-download the viewer")
 	}
 	if template == "ts" {
 		f.IO.Hint("Serving the build in %s. Keep `yarn dev-build` running, or rerun `yarn build`, to update it", root)
@@ -200,11 +257,12 @@ func (o *devOptions) run(ctx context.Context, f *core.Factory) error {
 	return nil
 }
 
-func playgroundURL(base, pluginURL string) string {
-	return base + playgroundPage + "?" + url.Values{"dev-plugin": {pluginURL}}.Encode()
+// viewerOpenURL constructs the URL to open the viewer with the plugin.
+func viewerOpenURL(base, pluginURL string) string {
+	return base + viewerHTMLPage + "?" + url.Values{"dev-plugin": {pluginURL}}.Encode()
 }
 
-// detectViewer returns pageURL if a Plugin Playground answers there, or nil.
+// detectViewer returns pageURL if a viewer answers there, or nil.
 func detectViewer(ctx context.Context, pageURL string) *url.URL {
 	ctx, cancel := context.WithTimeout(ctx, time.Second)
 	defer cancel()
@@ -218,7 +276,7 @@ func detectViewer(ctx context.Context, pageURL string) *url.URL {
 	}
 	defer func() { _ = resp.Body.Close() }()
 	b, err := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
-	if err != nil || resp.StatusCode != http.StatusOK || !strings.Contains(string(b), playgroundTitle) {
+	if err != nil || resp.StatusCode != http.StatusOK || !strings.Contains(string(b), viewerTitle) {
 		return nil
 	}
 	u, err := url.Parse(pageURL)
@@ -228,36 +286,36 @@ func detectViewer(ctx context.Context, pageURL string) *url.URL {
 	return u
 }
 
-// viewerPage parses --viewer-url. A URL that names no .html page, such as
-// the root of `yarn playground`, gets the Plugin Playground page.
-func viewerPage(raw string) (*url.URL, error) {
+// viewerPageURL parses --viewer-url. A URL that names no .html page gets
+// the default viewer page.
+func viewerPageURL(raw string) (*url.URL, error) {
 	u, err := url.Parse(raw)
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
 		return nil, cmdutil.FlagErrorf("--viewer-url must be an http or https URL, such as http://localhost:3000")
 	}
 	if path.Ext(u.Path) != ".html" {
-		u.Path = strings.TrimSuffix(u.Path, "/") + "/" + playgroundPage
+		u.Path = strings.TrimSuffix(u.Path, "/") + "/" + viewerHTMLPage
 	}
 	return u, nil
 }
 
-// devHandler serves the plugin at /plugin/ and, when viewer is set, that
+// devHandler serves the plugin at /plugin/ and, when viewerDir is set, that
 // viewer build at /. The plugin routes allow any origin, so a viewer hosted
 // elsewhere can load them too; that is why they serve only what a published
 // plugin exposes anyway. Every route requires a loopback Host, so a web page
 // cannot reach the server through DNS rebinding.
-func devHandler(viewer, manifest, root string, w *watcher) http.Handler {
+func devHandler(viewerDir, manifest, root string, w *watcher) http.Handler {
 	mux := http.NewServeMux()
-	if viewer != "" {
+	if viewerDir != "" {
 		mux.HandleFunc("GET /{$}", func(rw http.ResponseWriter, r *http.Request) {
-			http.Redirect(rw, r, playgroundURL("/", "http://"+r.Host+"/plugin"), http.StatusFound)
+			http.Redirect(rw, r, viewerOpenURL("/", "http://"+r.Host+"/plugin"), http.StatusFound)
 		})
 		// The viewer reads it if present; the defaults are enough.
 		mux.HandleFunc("GET /reearth_config.json", func(rw http.ResponseWriter, r *http.Request) {
 			rw.Header().Set("Content-Type", "application/json")
 			_, _ = rw.Write([]byte("{}"))
 		})
-		mux.Handle("GET /", http.FileServer(http.Dir(viewer)))
+		mux.Handle("GET /", http.FileServer(http.Dir(viewerDir)))
 	}
 
 	mux.HandleFunc("GET /plugin/events", cors(w.serveEvents))
@@ -462,4 +520,268 @@ func (w *watcher) serveEvents(rw http.ResponseWriter, r *http.Request) {
 		}
 		flusher.Flush()
 	}
+}
+
+// viewerCachePath returns the cache directory for the given viewer version.
+func viewerCachePath(version string) string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		home = os.TempDir()
+	}
+	return filepath.Join(home, ".reearth-cli", viewerCacheDir, version)
+}
+
+// ensureViewer downloads the viewer if not cached, and returns its path and manifest.
+// For latest/nightly versions, it automatically checks if a newer version is available.
+func ensureViewer(ctx context.Context, f *core.Factory, version string) (string, *viewerManifest, error) {
+	versionDir := viewerCachePath(version)
+	manifestPath := filepath.Join(versionDir, viewerManifestFile)
+
+	// Check if already cached
+	var cachedManifest *viewerManifest
+	if data, err := os.ReadFile(manifestPath); err == nil {
+		var manifest viewerManifest
+		if json.Unmarshal(data, &manifest) == nil {
+			cachedManifest = &manifest
+		}
+	}
+
+	// For nightly/latest, check if remote has a newer version
+	var release *releaseInfo
+	if version == "nightly" || version == "latest" {
+		f.IO.StartProgress(fmt.Sprintf("Checking for %s updates...", version))
+		var err error
+		release, err = fetchReleaseInfo(ctx, version)
+		f.IO.StopProgress()
+		if err != nil && cachedManifest == nil {
+			return "", nil, err
+		}
+		if err == nil && cachedManifest != nil {
+			needsUpdate := false
+			if version == "nightly" && release.Commit != "" && release.Commit != cachedManifest.Commit {
+				f.IO.Info("New nightly available (local: %s, remote: %s)", shortCommit(cachedManifest.Commit), shortCommit(release.Commit))
+				needsUpdate = true
+			} else if version == "latest" && release.TagName != "" && release.TagName != cachedManifest.Version {
+				f.IO.Info("New version available (local: %s, remote: %s)", cachedManifest.Version, release.TagName)
+				needsUpdate = true
+			}
+			if needsUpdate {
+				_ = os.RemoveAll(versionDir)
+				cachedManifest = nil
+			}
+		}
+	}
+
+	// Use cache if available
+	if cachedManifest != nil {
+		return versionDir, cachedManifest, nil
+	}
+
+	// Fetch release info if not already fetched
+	if release == nil {
+		f.IO.StartProgress(fmt.Sprintf("Fetching release info for viewer %s from GitHub...", version))
+		var err error
+		release, err = fetchReleaseInfo(ctx, version)
+		f.IO.StopProgress()
+		if err != nil {
+			return "", nil, err
+		}
+	}
+
+	f.IO.StartProgress("Downloading and extracting viewer...")
+
+	if err := os.MkdirAll(versionDir, 0755); err != nil {
+		f.IO.StopProgress()
+		return "", nil, fmt.Errorf("failed to create cache directory: %w", err)
+	}
+
+	if err := downloadAndExtractViewer(ctx, release.DownloadURL, versionDir); err != nil {
+		f.IO.StopProgress()
+		// Clean up partial download
+		_ = os.RemoveAll(versionDir)
+		return "", nil, err
+	}
+
+	f.IO.StopProgress()
+
+	// Read manifest
+	data, err := os.ReadFile(manifestPath)
+	if err != nil {
+		return "", nil, fmt.Errorf("failed to read viewer manifest: %w", err)
+	}
+
+	var manifest viewerManifest
+	if err := json.Unmarshal(data, &manifest); err != nil {
+		return "", nil, fmt.Errorf("failed to parse viewer manifest: %w", err)
+	}
+
+	return versionDir, &manifest, nil
+}
+
+// releaseInfo holds information about a GitHub release.
+type releaseInfo struct {
+	TagName     string
+	Commit      string
+	DownloadURL string
+}
+
+// fetchReleaseInfo fetches release information from GitHub for the given version.
+// It returns the tag name, commit, and download URL for the viewer asset.
+func fetchReleaseInfo(ctx context.Context, version string) (*releaseInfo, error) {
+	var apiURL string
+	switch version {
+	case "latest":
+		apiURL = "https://api.github.com/repos/reearth/reearth-visualizer/releases/latest"
+	case "nightly":
+		apiURL = "https://api.github.com/repos/reearth/reearth-visualizer/releases/tags/workbench-nightly"
+	default:
+		// Specific version - construct URL directly without API call
+		tag := version
+		if !strings.HasPrefix(tag, "v") {
+			tag = "v" + tag
+		}
+		return &releaseInfo{
+			TagName:     tag,
+			DownloadURL: fmt.Sprintf("https://github.com/reearth/reearth-visualizer/releases/download/%s/reearth-viz-workbench_%s.tar.gz", tag, tag),
+		}, nil
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch release info from GitHub API: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		return nil, fmt.Errorf("failed to fetch release info: %s (URL: %s, Response: %s)", resp.Status, apiURL, string(bodyBytes))
+	}
+
+	var release struct {
+		TagName         string `json:"tag_name"`
+		TargetCommitish string `json:"target_commitish"`
+		Assets          []struct {
+			Name               string `json:"name"`
+			BrowserDownloadURL string `json:"browser_download_url"`
+		} `json:"assets"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&release); err != nil {
+		return nil, fmt.Errorf("failed to parse release info: %w", err)
+	}
+
+	// Find viewer asset - workbench assets are platform-independent
+	var downloadURL string
+	for _, asset := range release.Assets {
+		if !strings.HasSuffix(asset.Name, ".tar.gz") {
+			continue
+		}
+		if !strings.HasPrefix(asset.Name, "reearth-viz-workbench_") {
+			continue
+		}
+		// Skip nightly when looking for latest
+		if version == "latest" && strings.Contains(asset.Name, "nightly") {
+			continue
+		}
+		// Skip non-nightly when looking for nightly
+		if version == "nightly" && !strings.Contains(asset.Name, "nightly") {
+			continue
+		}
+		downloadURL = asset.BrowserDownloadURL
+		break
+	}
+
+	if downloadURL == "" {
+		return nil, cmdutil.NewError(cmdutil.ExitNotFound, "visualizer.viewer_not_found",
+			fmt.Sprintf("viewer asset not found for version %s", version),
+			"check the available releases at https://github.com/reearth/reearth-visualizer/releases")
+	}
+
+	return &releaseInfo{
+		TagName:     release.TagName,
+		Commit:      release.TargetCommitish,
+		DownloadURL: downloadURL,
+	}, nil
+}
+
+// shortCommit returns the first 8 characters of a commit hash.
+func shortCommit(commit string) string {
+	if len(commit) > 8 {
+		return commit[:8]
+	}
+	return commit
+}
+
+// downloadAndExtractViewer downloads and extracts the viewer tarball.
+func downloadAndExtractViewer(ctx context.Context, downloadURL, destDir string) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, downloadURL, nil)
+	if err != nil {
+		return err
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to download viewer: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		return fmt.Errorf("failed to download viewer: %s (Response: %s)", resp.Status, string(bodyBytes))
+	}
+
+	// Extract tar.gz
+	gzr, err := gzip.NewReader(resp.Body)
+	if err != nil {
+		return fmt.Errorf("failed to decompress viewer: %w", err)
+	}
+	defer func() { _ = gzr.Close() }()
+
+	tr := tar.NewReader(gzr)
+	for {
+		header, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return fmt.Errorf("failed to read tar: %w", err)
+		}
+
+		// Clean the path to prevent directory traversal
+		name := filepath.Clean(header.Name)
+		if strings.HasPrefix(name, "..") {
+			continue
+		}
+		target := filepath.Join(destDir, name)
+
+		switch header.Typeflag {
+		case tar.TypeDir:
+			if err := os.MkdirAll(target, 0755); err != nil {
+				return err
+			}
+		case tar.TypeReg:
+			if err := os.MkdirAll(filepath.Dir(target), 0755); err != nil {
+				return err
+			}
+			f, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, os.FileMode(header.Mode))
+			if err != nil {
+				return err
+			}
+			// Limit file size to prevent decompression bombs
+			if _, err := io.Copy(f, io.LimitReader(tr, maxExtractFileSize)); err != nil {
+				_ = f.Close()
+				return err
+			}
+			_ = f.Close()
+		}
+	}
+
+	return nil
 }

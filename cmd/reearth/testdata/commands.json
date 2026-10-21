@@ -191,13 +191,24 @@
       },
       {
         "name": "viewer",
+        "type": "bool",
+        "usage": "Download and serve the Visualizer viewer"
+      },
+      {
+        "name": "viewer-dir",
         "type": "string",
-        "usage": "Serve this Plugin Playground build and open it"
+        "usage": "Serve this local viewer build"
       },
       {
         "name": "viewer-url",
         "type": "string",
-        "usage": "Open the Plugin Playground running at this URL, such as `yarn playground`"
+        "usage": "Open the viewer running at this URL"
+      },
+      {
+        "name": "viewer-version",
+        "type": "string",
+        "default": "latest",
+        "usage": "Viewer version to download: latest, nightly, or a specific version like v1.0.0"
       }
     ]
   },
