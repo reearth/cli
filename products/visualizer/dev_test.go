@@ -191,9 +191,9 @@ func TestDevServerWithoutViewer(t *testing.T) {
 	srv := httptest.NewServer(devHandler("", filepath.Join(dir, manifestFile), dir, newWatcher(filepath.Join(dir, manifestFile), dir)))
 	defer srv.Close()
 	for path, want := range map[string]int{
-		"/plugin/reearth.yml":  http.StatusOK,
-		"/":                    http.StatusNotFound,
-		"/" + viewerHTMLPage:   http.StatusNotFound,
+		"/plugin/reearth.yml": http.StatusOK,
+		"/":                   http.StatusNotFound,
+		"/" + viewerHTMLPage:  http.StatusNotFound,
 	} {
 		resp, err := http.Get(srv.URL + path)
 		if err != nil {
