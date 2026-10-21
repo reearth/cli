@@ -194,7 +194,8 @@ func (o *devOptions) run(ctx context.Context, f *core.Factory) error {
 	if err != nil {
 		return cmdutil.NewError(cmdutil.ExitUsage, "visualizer.port_in_use", err.Error(), "pass another --port, or --port 0 for a free one")
 	}
-	base := fmt.Sprintf("http://%s/", ln.Addr())
+	_, port, _ := net.SplitHostPort(ln.Addr().String())
+	base := fmt.Sprintf("http://localhost:%s/", port)
 	o.PluginURL = base + "plugin"
 	if viewerPath != "" {
 		o.URL = viewerOpenURL(base, o.PluginURL)
