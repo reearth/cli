@@ -7,6 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/reearth/cli/sdk/auth"
 	"github.com/reearth/cli/sdk/core"
 )
 
@@ -15,25 +16,33 @@ var templates embed.FS
 
 type Product struct{}
 
+var _ core.APIProduct = Product{}
+
 func (Product) Name() string  { return "visualizer" }
-func (Product) Short() string { return "Develop Re:Earth Visualizer plugins" }
+func (Product) Short() string { return "Develop Re:Earth Visualizer plugins and list projects" }
+
+func (Product) BaseURL(*auth.Env) string { return "" }
 
 func (p Product) Command(f *core.Factory) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "visualizer",
 		Aliases: []string{"vis"},
 		Short:   p.Short(),
-		Long: `Develop Re:Earth Visualizer plugins on your machine, without logging in.
+		Long: `Develop Re:Earth Visualizer plugins on your machine, without logging in,
+and list Visualizer projects.
 
 A plugin has an ID, a version and one or more extensions. Each extension is
 a widget (UI on the map), a storyBlock or an infoboxBlock, with its code in
 <extension-id>.js and its settings described in reearth.yml. The plugin
 commands create, serve, validate and package plugins.
 
+"project list" calls the Visualizer API as the current account. Until the
+API's address is built in, set REEARTH_VISUALIZER_BASE_URL to it.
+
 For the plugin API itself (reearth.ui, reearth.extension, ...), search the
 documentation: ` + "`reearth docs search \"プラグイン\"`" + `.`,
 	}
-	cmd.AddCommand(newCmdPlugin(f))
+	cmd.AddCommand(newCmdProject(f), newCmdPlugin(f))
 	return cmd
 }
 

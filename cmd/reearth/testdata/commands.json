@@ -89,11 +89,63 @@
   {
     "path": "reearth visualizer",
     "usage": "reearth visualizer [flags]",
-    "short": "Develop Re:Earth Visualizer plugins",
+    "short": "Develop Re:Earth Visualizer plugins and list projects",
     "aliases": [
       "vis"
     ],
     "runnable": false
+  },
+  {
+    "path": "reearth visualizer project",
+    "usage": "reearth visualizer project [flags]",
+    "short": "List Visualizer projects",
+    "runnable": false
+  },
+  {
+    "path": "reearth visualizer project list",
+    "usage": "reearth visualizer project list [flags]",
+    "short": "List the projects of a workspace",
+    "runnable": true,
+    "flags": [
+      {
+        "name": "all",
+        "type": "bool",
+        "usage": "Fetch every page"
+      },
+      {
+        "name": "deleted",
+        "type": "bool",
+        "usage": "Only projects in the trash"
+      },
+      {
+        "name": "keyword",
+        "type": "string",
+        "usage": "Only projects whose name contains this text"
+      },
+      {
+        "name": "limit",
+        "shorthand": "L",
+        "type": "int",
+        "default": "20",
+        "usage": "Maximum number of projects per page (1-100)"
+      },
+      {
+        "name": "sort",
+        "type": "string",
+        "usage": "Sort order: updatedAt, -updatedAt, name, -name"
+      },
+      {
+        "name": "starred",
+        "type": "bool",
+        "usage": "Only starred projects"
+      },
+      {
+        "name": "workspace",
+        "shorthand": "w",
+        "type": "string",
+        "usage": "Workspace ID (default: REEARTH_VISUALIZER_WORKSPACE, .reearth.yaml, then the account's default)"
+      }
+    ]
   },
   {
     "path": "reearth visualizer plugin",
