@@ -23,5 +23,8 @@ require (
 	github.com/godbus/dbus/v5 v5.2.2 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/itchyny/timefmt-go v0.1.8 // indirect
+	github.com/reearth/reearth-cms-api/go v0.0.1 // indirect
+	github.com/samber/lo v1.47.0 // indirect
 	golang.org/x/sys v0.48.0 // indirect
+	golang.org/x/text v0.18.0 // indirect
 )
