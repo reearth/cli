@@ -3,3 +3,5 @@ tmp/
 /dist/
 /completions/
 .idea
+.env
+.env.*
