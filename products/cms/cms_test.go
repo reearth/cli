@@ -35,6 +35,16 @@ func run(t *testing.T, args ...string) result {
 	return result{out.String(), errOut.String(), code}
 }
 
+// runTTY runs with stdout and stderr on a terminal, as a person sees it.
+func runTTY(t *testing.T, args ...string) result {
+	t.Helper()
+	ios, _, out, errOut := iostreams.Test()
+	ios.SetTTY(false, true, true)
+	f := app.NewFactory(opts, ios)
+	code := app.Execute(f, opts, args)
+	return result{out.String(), errOut.String(), code}
+}
+
 type request struct {
 	Method, Path, Query, Auth string
 	Body                      map[string]any
@@ -111,6 +121,9 @@ var item = map[string]any{
 		map[string]any{"key": "spots", "type": "group", "value": []any{"g1"}},
 		map[string]any{"key": "name", "type": "text", "value": "Gate", "group": "g1"},
 	},
+	"metadataFields": []any{
+		map[string]any{"key": "status", "type": "select", "value": "draft"},
+	},
 }
 
 // The SDK is given no token; the authenticated client sets the real one.
@@ -176,12 +189,15 @@ func TestModelGetFallsBackToKey(t *testing.T) {
 	}
 }
 
-func TestItemGetNestsGroups(t *testing.T) {
+// People get one row per field, with the fields of a group under its key.
+func TestItemGetListsFields(t *testing.T) {
 	api := newFakeServer(t, map[string]http.HandlerFunc{"GET /api/items/it1": reply(item)})
 	setup(t, api, nil)
 	r := run(t, "cms", "item", "get", "it1")
-	if r.code != 0 || !strings.Contains(r.out, "- key: spots") || !strings.Contains(r.out, "value: Gate") {
-		t.Fatalf("%+v", r)
+	for _, want := range []string{"id\tit1\n", "title\ttext\tHello\n", "spots[0].name\ttext\tGate\n", "status\tselect\tdraft\n"} {
+		if r.code != 0 || !strings.Contains(r.out, want) {
+			t.Fatalf("missing %q: %+v", want, r)
+		}
 	}
 	if q := api.requests()[0].Query; q != "asset=true" {
 		t.Fatalf("query: %q", q)
@@ -190,6 +206,23 @@ func TestItemGetNestsGroups(t *testing.T) {
 	r = run(t, "cms", "item", "get", "it1", "--jq", ".fields[2].group")
 	if r.code != 0 || strings.TrimSpace(r.out) != "g1" {
 		t.Fatalf("json: %+v", r)
+	}
+}
+
+// Piped, every field is a column and no value is cut.
+func TestItemListPlainHasEveryField(t *testing.T) {
+	api := newFakeServer(t, map[string]http.HandlerFunc{
+		"GET /api/models/m1/items": reply(map[string]any{"items": []any{item}, "page": 1, "perPage": 50, "totalCount": 1}),
+	})
+	setup(t, api, nil)
+	r := run(t, "cms", "item", "list", "-m", "m1")
+	if r.code != 0 || !strings.HasPrefix(r.out, "it1\tHello\t") {
+		t.Fatalf("%+v", r)
+	}
+	// On a terminal, the field keys are the column headers.
+	r = runTTY(t, "cms", "item", "list", "-m", "m1")
+	if r.code != 0 || !strings.Contains(r.out, "TITLE") || !strings.Contains(r.out, "Hello") {
+		t.Fatalf("tty: %+v", r)
 	}
 }
 
@@ -295,16 +328,22 @@ func TestAPIErrorsMapToExitCodes(t *testing.T) {
 	api := newFakeServer(t, map[string]http.HandlerFunc{
 		"GET /api/assets/missing": status(http.StatusNotFound),
 		"GET /api/assets/denied":  status(http.StatusUnauthorized),
-		"GET /api/assets/broken":  status(http.StatusBadRequest),
+		"GET /api/assets/invalid": status(http.StatusBadRequest),
+		"GET /api/assets/broken":  status(http.StatusConflict),
 	})
 	setup(t, api, nil)
-	for id, want := range map[string]int{
-		"missing": cmdutil.ExitNotFound,
-		"denied":  cmdutil.ExitAuth,
-		"broken":  cmdutil.ExitError,
+	for id, want := range map[string]struct {
+		exit int
+		code string
+	}{
+		"missing": {cmdutil.ExitNotFound, "not_found"},
+		"denied":  {cmdutil.ExitAuth, "auth.rejected"},
+		"invalid": {cmdutil.ExitUsage, "cms.invalid_input"},
+		"broken":  {cmdutil.ExitError, "cms.request_failed"},
 	} {
-		if r := run(t, "cms", "asset", "get", id); r.code != want {
-			t.Errorf("%s: exit %d, want %d (%s)", id, r.code, want, r.errOut)
+		r := run(t, "cms", "asset", "get", id, "--json")
+		if r.code != want.exit || !strings.Contains(r.errOut, `"code":"`+want.code+`"`) {
+			t.Errorf("%s: exit %d, want %d %s (%s)", id, r.code, want.exit, want.code, r.errOut)
 		}
 	}
 }
@@ -380,5 +419,138 @@ func TestComment(t *testing.T) {
 	got := api.requests()
 	if got[0].Body["content"] != "Checked" || got[1].Body["content"] != "Fine" {
 		t.Fatalf("requests: %+v", got)
+	}
+}
+
+func TestAssetCreateFromURLAndDirect(t *testing.T) {
+	api := newFakeServer(t, map[string]http.HandlerFunc{
+		"POST /api/projects/proj/assets": func(w http.ResponseWriter, r *http.Request) {
+			if !strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/form-data") {
+				writeJSON(w, map[string]any{"id": "from-url"})
+				return
+			}
+			fh, hdr, err := r.FormFile("file")
+			if err != nil {
+				t.Errorf("multipart: %v", err)
+				return
+			}
+			b, _ := io.ReadAll(fh)
+			if hdr.Filename != "park.geojson" || string(b) != "{}" {
+				t.Errorf("uploaded %s %q", hdr.Filename, b)
+			}
+			writeJSON(w, map[string]any{"id": "direct"})
+		},
+		"GET /api/assets/from-url": reply(map[string]any{"id": "from-url", "name": "image.png"}),
+		// The asset is not readable yet: create still reports its ID.
+		"GET /api/assets/direct": status(http.StatusNotFound),
+	})
+	setup(t, api, envvar.Map{"REEARTH_CMS_PROJECT": "proj"})
+	if err := os.MkdirAll("data", 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join("data", "park.geojson"), []byte("{}"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	r := run(t, "cms", "asset", "create", "-u", "https://example.com/image.png", "--json=id,name")
+	if r.code != 0 || !strings.Contains(r.out, `"name": "image.png"`) {
+		t.Fatalf("url: %+v", r)
+	}
+	if u := api.requests()[0].Body["url"]; u != "https://example.com/image.png" {
+		t.Fatalf("url body: %v", u)
+	}
+
+	r = run(t, "cms", "asset", "create", "-f", filepath.Join("data", "park.geojson"), "--direct", "--json=id")
+	if r.code != 0 || !strings.Contains(r.out, `"direct"`) {
+		t.Fatalf("direct: %+v", r)
+	}
+}
+
+func TestAssetFailures(t *testing.T) {
+	storage := newFakeServer(t, map[string]http.HandlerFunc{
+		"PUT /upload":     status(http.StatusForbidden),
+		"GET /files/gone": status(http.StatusNotFound),
+	})
+	api := newFakeServer(t, map[string]http.HandlerFunc{
+		"POST /api/projects/proj/assets/uploads": reply(map[string]any{"url": storage.srv.URL + "/upload", "token": "up1"}),
+		"GET /api/assets/gone":                   reply(map[string]any{"id": "gone", "url": storage.srv.URL + "/files/gone"}),
+		"GET /api/assets/nourl":                  reply(map[string]any{"id": "nourl"}),
+	})
+	setup(t, api, envvar.Map{"REEARTH_CMS_PROJECT": "proj"})
+	if err := os.WriteFile("a.geojson", []byte("{}"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, c := range []struct {
+		args []string
+		exit int
+		code string
+	}{
+		{[]string{"asset", "create", "-f", "a.geojson"}, cmdutil.ExitError, "cms.upload_failed"},
+		{[]string{"asset", "create", "-f", "missing.geojson"}, cmdutil.ExitUsage, "cms.file_unreadable"},
+		{[]string{"asset", "cat", "gone"}, cmdutil.ExitError, "cms.download_failed"},
+		{[]string{"asset", "cp", "gone", "out.geojson"}, cmdutil.ExitError, "cms.download_failed"},
+		{[]string{"asset", "cat", "nourl"}, cmdutil.ExitError, "cms.asset_no_url"},
+	} {
+		r := run(t, append(append([]string{"cms"}, c.args...), "--json")...)
+		if r.code != c.exit || !strings.Contains(r.errOut, `"code":"`+c.code+`"`) {
+			t.Errorf("%v: exit %d, want %d %s (%s)", c.args, r.code, c.exit, c.code, r.errOut)
+		}
+	}
+	// A failed copy leaves no partial file behind.
+	if _, err := os.Stat("out.geojson"); !os.IsNotExist(err) {
+		t.Errorf("out.geojson: %v", err)
+	}
+}
+
+func TestPaging(t *testing.T) {
+	api := newFakeServer(t, map[string]http.HandlerFunc{
+		"GET /api/projects/proj/models": reply(map[string]any{
+			"models": []any{map[string]any{"id": "m1", "key": "parks"}},
+			"page":   1, "perPage": 1, "totalCount": 3,
+		}),
+	})
+	setup(t, api, envvar.Map{"REEARTH_CMS_PROJECT": "proj"})
+
+	r := runTTY(t, "cms", "model", "list", "--per-page", "1")
+	if r.code != 0 || !strings.Contains(r.errOut, "page 1 of 3 models; pass --page 2 for the next") {
+		t.Fatalf("hint: %+v", r)
+	}
+	// Machines get no hint.
+	if r := run(t, "cms", "model", "list", "--per-page", "1"); strings.Contains(r.errOut, "--page 2") {
+		t.Fatalf("plain hint: %+v", r)
+	}
+
+	for _, args := range [][]string{{"--page", "0"}, {"--per-page", "0"}} {
+		if r := run(t, append([]string{"cms", "model", "list"}, args...)...); r.code != cmdutil.ExitUsage {
+			t.Errorf("%v: %+v", args, r)
+		}
+	}
+	if n := len(api.requests()); n != 2 {
+		t.Fatalf("made %d requests, want 2", n)
+	}
+}
+
+func TestHumanViews(t *testing.T) {
+	api := newFakeServer(t, map[string]http.HandlerFunc{
+		"GET /api/assets/a1":    reply(map[string]any{"id": "a1", "name": "park.geojson", "url": "https://files.example.com/park.geojson"}),
+		"DELETE /api/items/it1": reply(map[string]any{}),
+	})
+	setup(t, api, nil)
+
+	r := runTTY(t, "cms", "asset", "get", "a1")
+	for _, want := range []string{"id", "a1", "park.geojson", "https://files.example.com/park.geojson"} {
+		if r.code != 0 || !strings.Contains(r.out, want) {
+			t.Fatalf("asset get missing %q: %+v", want, r)
+		}
+	}
+	// Empty values are left out.
+	if strings.Contains(r.out, "content type") {
+		t.Fatalf("asset get shows an empty row: %q", r.out)
+	}
+
+	r = runTTY(t, "cms", "item", "delete", "it1", "--yes")
+	if r.code != 0 || r.out != "" || !strings.Contains(r.errOut, "Deleted item it1") {
+		t.Fatalf("delete: %+v", r)
 	}
 }

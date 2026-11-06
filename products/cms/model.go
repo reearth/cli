@@ -2,12 +2,14 @@ package cms
 
 import (
 	"errors"
+	"fmt"
 
 	cmsapi "github.com/reearth/reearth-cms-api/go"
 	"github.com/spf13/cobra"
 
 	"github.com/reearth/cli/sdk/cmdutil"
 	"github.com/reearth/cli/sdk/core"
+	"github.com/reearth/cli/sdk/output"
 )
 
 func newCmdModel(f *core.Factory, o *globalOptions) *cobra.Command {
@@ -26,7 +28,7 @@ func newCmdModelList(f *core.Factory, o *globalOptions) *cobra.Command {
 		Short: "List the models of a project",
 		Example: `  $ reearth cms model list -p my-project
   $ reearth cms model list --page 2 --per-page 20
-  $ reearth cms model list --json id,key,name`,
+  $ reearth cms model list --json=id,key,name`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := checkPage(page, perPage); err != nil {
@@ -56,9 +58,10 @@ func newCmdModelList(f *core.Factory, o *globalOptions) *cobra.Command {
 					f.IO.Info("No models found")
 					return nil
 				}
+				cs := f.IO.Color()
 				t := p.Table("ID", "KEY", "NAME", "PUBLIC", "UPDATED")
 				for _, m := range res.Models {
-					t.Row(m.ID, m.Key, m.Name, m.Public, p.Time(m.UpdatedAt))
+					t.Row(m.ID, m.Key, m.Name, m.Public, output.Cell{Text: p.Time(m.UpdatedAt), Style: cs.Dim})
 				}
 				if err := t.Render(); err != nil {
 					return err
@@ -98,7 +101,18 @@ func newCmdModelGet(f *core.Factory, o *globalOptions) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return p.Print(m, nil)
+			return p.Print(m, func() error {
+				return detail(f, p,
+					[2]string{"id", m.ID},
+					[2]string{"key", m.Key},
+					[2]string{"name", m.Name},
+					[2]string{"public", fmt.Sprint(m.Public)},
+					[2]string{"project", m.ProjectID},
+					[2]string{"schema", m.SchemaID},
+					[2]string{"metadata schema", m.MetadataSchemaID},
+					[2]string{"updated", p.Time(m.UpdatedAt)},
+				)
+			})
 		},
 	}
 }

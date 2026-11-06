@@ -2,11 +2,9 @@ package cms
 
 import (
 	"fmt"
-	"strings"
 
 	cmsapi "github.com/reearth/reearth-cms-api/go"
 	"github.com/spf13/cobra"
-	"go.yaml.in/yaml/v3"
 
 	"github.com/reearth/cli/sdk/cmdutil"
 	"github.com/reearth/cli/sdk/core"
@@ -21,8 +19,8 @@ func newCmdItem(f *core.Factory, o *globalOptions) *cobra.Command {
 
 A model is given by ID, or by key together with a project (-p). Field values
 are given as -k <key> -t <type> -v <value>, repeated once per field, and
-metadata fields as -K, -T and -V. Values are sent as text; CMS converts them
-to the field's type.
+metadata fields as -K, -T and -V. Values are sent as strings. For the
+field types and the values they take, see ` + "`reearth docs search \"CMS フィールド\"`" + `.
 
 update and delete ask for confirmation unless --yes is passed, and are
 refused in safe mode (see ` + "`reearth cms --help`" + `).`,
@@ -43,7 +41,7 @@ func newCmdItemList(f *core.Factory, o *globalOptions) *cobra.Command {
 		Short: "List the items of a model",
 		Example: `  $ reearth cms item list -m 01j...
   $ reearth cms item list -m parks -p my-project --page 2
-  $ reearth cms item list -m parks --asset --json id,fields`,
+  $ reearth cms item list -m parks --asset --json=id,fields`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := checkPage(page, perPage); err != nil {
@@ -75,12 +73,30 @@ func newCmdItemList(f *core.Factory, o *globalOptions) *cobra.Command {
 					return nil
 				}
 				cs := f.IO.Color()
-				t := p.Table("ID", "FIELDS", "UPDATED")
-				for _, it := range res.Items {
-					t.Row(it.ID, fieldSummary(it.Fields), output.Cell{Text: p.Time(it.UpdatedAt), Style: cs.Dim})
+				it := newItemTable(res.Items)
+				var dropped int
+				if p.IsHuman() {
+					// The ID and UPDATED columns, with the margin and gaps.
+					idW := 0
+					for _, item := range res.Items {
+						idW = max(idW, len(item.ID))
+					}
+					dropped = it.fit(f.IO.TerminalWidth(), 2+idW+3+len("12 months ago"))
+				}
+				headers := append(append([]string{"ID"}, it.keys...), "UPDATED")
+				t := p.Table(headers...)
+				for i, item := range res.Items {
+					row := []any{item.ID}
+					for _, k := range it.keys {
+						row = append(row, it.values[i][k])
+					}
+					t.Row(append(row, output.Cell{Text: p.Time(item.UpdatedAt), Style: cs.Dim})...)
 				}
 				if err := t.Render(); err != nil {
 					return err
+				}
+				if dropped > 0 {
+					f.IO.Hint("%d more fields do not fit; see them with `%s cms item get <id>` or --json", dropped, f.AppName)
 				}
 				pageHint(f, p.IsHuman(), res.HasNext(), page, res.TotalCount, "items")
 				return nil
@@ -279,91 +295,4 @@ func newCmdItemDelete(f *core.Factory, o *globalOptions) *cobra.Command {
 			})
 		},
 	}
-}
-
-// printItem prints an item as it is for machines, and for people as YAML
-// with group fields nested under the field that holds them.
-func printItem(f *core.Factory, it *cmsapi.Item) error {
-	p, err := f.Printer()
-	if err != nil {
-		return err
-	}
-	return p.Print(it, func() error {
-		enc := yaml.NewEncoder(f.IO.Out)
-		enc.SetIndent(2)
-		defer func() { _ = enc.Close() }()
-		return enc.Encode(itemView(p, it))
-	})
-}
-
-func itemView(p *output.Printer, it *cmsapi.Item) map[string]any {
-	groups := map[string][]*cmsapi.Field{}
-	var top []*cmsapi.Field
-	for _, fd := range it.Fields {
-		if fd.Group != "" {
-			groups[fd.Group] = append(groups[fd.Group], fd)
-		} else {
-			top = append(top, fd)
-		}
-	}
-	return map[string]any{
-		"id":        it.ID,
-		"modelId":   it.ModelID,
-		"createdAt": p.Time(it.CreatedAt),
-		"updatedAt": p.Time(it.UpdatedAt),
-		"fields":    fieldsView(top, groups),
-	}
-}
-
-func fieldsView(fields []*cmsapi.Field, groups map[string][]*cmsapi.Field) []map[string]any {
-	out := make([]map[string]any, 0, len(fields))
-	for _, fd := range fields {
-		v := fd.Value
-		if fd.Type == "group" {
-			var nested [][]map[string]any
-			for _, gid := range stringsOf(fd.Value) {
-				if g, ok := groups[gid]; ok {
-					nested = append(nested, fieldsView(g, groups))
-				}
-			}
-			v = nested
-		}
-		out = append(out, map[string]any{"key": fd.Key, "type": fd.Type, "value": v})
-	}
-	return out
-}
-
-// stringsOf reads a group field's value: one group ID or a list of them.
-func stringsOf(v any) []string {
-	switch v := v.(type) {
-	case string:
-		return []string{v}
-	case []string:
-		return v
-	case []any:
-		var out []string
-		for _, e := range v {
-			if s, ok := e.(string); ok {
-				out = append(out, s)
-			}
-		}
-		return out
-	}
-	return nil
-}
-
-// fieldSummary shows an item's top-level values in one table cell.
-func fieldSummary(fields []*cmsapi.Field) string {
-	const maxLen = 60
-	var parts []string
-	for _, fd := range fields {
-		if fd.Group == "" && fd.Type != "group" {
-			parts = append(parts, fmt.Sprintf("%s=%v", fd.Key, fd.Value))
-		}
-	}
-	s := strings.Join(parts, " ")
-	if r := []rune(s); len(r) > maxLen {
-		s = string(r[:maxLen-1]) + "…"
-	}
-	return s
 }

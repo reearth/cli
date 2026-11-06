@@ -2,6 +2,7 @@ package cms
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -39,13 +40,28 @@ func newCmdAssetGet(f *core.Factory, o *globalOptions) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			p, err := f.Printer()
-			if err != nil {
-				return err
-			}
-			return p.Print(a, nil)
+			return printAsset(f, a)
 		},
 	}
+}
+
+// printAsset prints an asset: as the API returns it for machines, and as
+// its details for people.
+func printAsset(f *core.Factory, a *cmsapi.Asset) error {
+	p, err := f.Printer()
+	if err != nil {
+		return err
+	}
+	return p.Print(a, func() error {
+		return detail(f, p,
+			[2]string{"id", a.ID},
+			[2]string{"name", a.Name},
+			[2]string{"url", a.URL},
+			[2]string{"content type", a.ContentType},
+			[2]string{"project", a.ProjectID},
+			[2]string{"updated", p.Time(a.UpdatedAt)},
+		)
+	})
 }
 
 func getAsset(ctx context.Context, f *core.Factory, o *globalOptions, id string) (*cmsapi.Asset, error) {
@@ -117,11 +133,7 @@ files. --direct sends it to the CMS API in the request instead.`,
 			}
 
 			f.IO.Success("Created asset %s", a.ID)
-			p, err := f.Printer()
-			if err != nil {
-				return err
-			}
-			return p.Print(a, nil)
+			return printAsset(f, a)
 		},
 	}
 	cmd.Flags().StringVarP(&file, "file", "f", "", "File to upload")
@@ -133,7 +145,8 @@ files. --direct sends it to the CMS API in the request instead.`,
 func uploadFile(path string, upload func(io.Reader) (*cmsapi.Asset, error)) (*cmsapi.Asset, error) {
 	fh, err := os.Open(path)
 	if err != nil {
-		return nil, err
+		return nil, &cmdutil.Error{Exit: cmdutil.ExitUsage, Code: "cms.file_unreadable", Err: err,
+			Message: err.Error(), Hint: "check the path given to -f"}
 	}
 	defer func() { _ = fh.Close() }()
 	return upload(fh)
@@ -160,7 +173,8 @@ func uploadSigned(ctx context.Context, f *core.Factory, c *cmsapi.CMS, project, 
 		return nil, apiError(err, "asset upload")
 	}
 	if err := c.WithHTTPClient(storageClient(f)).UploadToAssetUpload(ctx, up, r); err != nil {
-		return nil, fmt.Errorf("upload %s: %w", name, err)
+		return nil, &cmdutil.Error{Exit: cmdutil.ExitError, Code: "cms.upload_failed", Err: err,
+			Message: fmt.Sprintf("upload %s: %v", name, err)}
 	}
 	a, err := c.CreateAssetByToken(ctx, project, up.Token)
 	if err != nil {
@@ -200,7 +214,7 @@ func newCmdAssetCp(f *core.Factory, o *globalOptions) *cobra.Command {
 			}
 			fh, err := os.Create(dest)
 			if err != nil {
-				return err
+				return &cmdutil.Error{Exit: cmdutil.ExitError, Code: "cms.write_failed", Err: err, Message: err.Error()}
 			}
 			f.IO.StartProgress("Downloading the asset…")
 			n, err := download(cmd.Context(), f, a, fh)
@@ -233,17 +247,25 @@ func download(ctx context.Context, f *core.Factory, a *cmsapi.Asset, w io.Writer
 	if a.URL == "" {
 		return 0, cmdutil.NewError(cmdutil.ExitError, "cms.asset_no_url", fmt.Sprintf("asset %s has no URL", a.ID), "")
 	}
+	failed := func(err error) error {
+		return &cmdutil.Error{Exit: cmdutil.ExitError, Code: "cms.download_failed", Err: err,
+			Message: fmt.Sprintf("download asset %s: %v", a.ID, err)}
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, a.URL, nil)
 	if err != nil {
-		return 0, err
+		return 0, failed(err)
 	}
 	resp, err := storageClient(f).Do(req)
 	if err != nil {
-		return 0, err
+		return 0, failed(err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
-		return 0, fmt.Errorf("download asset %s: %s", a.ID, resp.Status)
+		return 0, failed(errors.New(resp.Status))
 	}
-	return io.Copy(w, resp.Body)
+	n, err := io.Copy(w, resp.Body)
+	if err != nil {
+		return n, failed(err)
+	}
+	return n, nil
 }

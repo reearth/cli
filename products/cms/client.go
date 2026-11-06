@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"regexp"
 	"strings"
 
 	cmsapi "github.com/reearth/reearth-cms-api/go"
@@ -70,19 +71,31 @@ func storageClient(f *core.Factory) *http.Client {
 	return &hc
 }
 
-// apiError gives SDK errors the CLI's exit codes. The SDK reports a status
+// reStatus finds the status code in an SDK error. The SDK reports a status
 // other than 404 only in its message ("failed to request: code=401, ...").
+var reStatus = regexp.MustCompile(`code=(\d{3})`)
+
+// apiError gives SDK errors the CLI's error codes and exit codes.
 func apiError(err error, what string) error {
 	if errors.Is(err, cmsapi.ErrNotFound) {
 		return cmdutil.NotFoundf("%s not found", what)
 	}
-	msg := err.Error()
-	if strings.Contains(msg, "code=401") || strings.Contains(msg, "code=403") {
-		return cmdutil.NewError(cmdutil.ExitAuth, "auth.rejected",
-			fmt.Sprintf("the CMS API rejected the token for %s", what),
-			"check the integration token: `reearth login --with-token --product cms` or REEARTH_CMS_TOKEN")
+	var status string
+	if m := reStatus.FindStringSubmatch(err.Error()); m != nil {
+		status = m[1]
 	}
-	return fmt.Errorf("%s: %w", what, err)
+	switch status {
+	case "401", "403":
+		return &cmdutil.Error{Exit: cmdutil.ExitAuth, Code: "auth.rejected", Err: err,
+			Message: fmt.Sprintf("the CMS API rejected the token for %s", what),
+			Hint:    "check the integration token: `reearth login --with-token --product cms` or REEARTH_CMS_TOKEN"}
+	case "400", "422":
+		return &cmdutil.Error{Exit: cmdutil.ExitUsage, Code: "cms.invalid_input", Err: err,
+			Message: fmt.Sprintf("the CMS API refused the request for %s: %v", what, err),
+			Hint:    "check the field keys, types and values against the model's schema"}
+	}
+	return &cmdutil.Error{Exit: cmdutil.ExitError, Code: "cms.request_failed", Err: err,
+		Message: fmt.Sprintf("%s: %v", what, err)}
 }
 
 // checkSafeMode refuses action when safe mode is on.

@@ -29,11 +29,10 @@ func (p Product) Command(f *core.Factory) *cobra.Command {
 		Long: `Read and write Re:Earth CMS content through the integration API.
 
 A workspace holds projects. A project (an ID or its alias) holds models and
-assets. A model (an ID or its key) has a schema of fields, and its items hold
-a value for each field: a key, a type such as text, number or asset, and a
-value. A model can also have metadata fields, set with the --meta-* flags.
-Fields of type group hold the IDs of nested field groups. Comments are
-added to items and assets.
+assets. A model (an ID or its key) defines fields, and each of its items
+holds a value for every field; a model can also define metadata fields.
+Items and assets take comments. For the field types and what they hold,
+search the documentation: ` + "`reearth docs search \"CMS フィールド\"`" + `.
 
 Commands need an integration token: run ` + "`reearth login --with-token --product cms`" + `
 or set REEARTH_CMS_TOKEN. Most commands also need a project: pass -p, or set
