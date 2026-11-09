@@ -256,6 +256,31 @@ func TestDestructiveCommandsNeedProjectArg(t *testing.T) {
 	}
 }
 
+func TestProjectFlag(t *testing.T) {
+	api := newFakeAPI(t, map[string]http.HandlerFunc{
+		"GET /projects/p1":    func(w http.ResponseWriter, _ *http.Request) { writeJSON(w, 200, projectJSON("p1", "A")) },
+		"DELETE /projects/p1": func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) },
+	})
+	setup(t, api, envvar.Map{"REEARTH_VISUALIZER_PROJECT": "p9"})
+
+	for _, args := range [][]string{
+		{"vis", "project", "view", "--project", "p1"},
+		{"vis", "project", "delete", "-p", "p1", "--yes"},
+		{"vis", "project", "delete", "p1", "--project", "p1", "--yes"},
+	} {
+		if r := run(t, args...); r.code != 0 {
+			t.Fatalf("%v: %+v", args, r)
+		}
+	}
+	if r := run(t, "vis", "project", "delete", "p1", "--project", "p2", "--yes"); r.code != cmdutil.ExitUsage {
+		t.Fatalf("argument and --project differ: %+v", r)
+	}
+	got := api.reqs()
+	if len(got) != 3 || got[0].Path != "/projects/p1" || got[1].Path != "/projects/p1" || got[2].Path != "/projects/p1" {
+		t.Fatalf("requests: %+v", got)
+	}
+}
+
 func TestProjectDeletePermanent(t *testing.T) {
 	api := newFakeAPI(t, map[string]http.HandlerFunc{
 		"DELETE /projects/p1": func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) },

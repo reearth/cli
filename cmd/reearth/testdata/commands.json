@@ -154,6 +154,12 @@
     "runnable": true,
     "flags": [
       {
+        "name": "project",
+        "shorthand": "p",
+        "type": "string",
+        "usage": "Project ID, instead of the argument"
+      },
+      {
         "name": "web",
         "type": "bool",
         "usage": "Open the project in the Visualizer editor"
@@ -216,6 +222,12 @@
         "usage": "New project name"
       },
       {
+        "name": "project",
+        "shorthand": "p",
+        "type": "string",
+        "usage": "Project ID, instead of the argument"
+      },
+      {
         "name": "starred",
         "type": "bool",
         "usage": "Star or unstar the project (--starred=false)"
@@ -232,6 +244,12 @@
         "name": "permanent",
         "type": "bool",
         "usage": "Delete for good; the project must already be in the trash"
+      },
+      {
+        "name": "project",
+        "shorthand": "p",
+        "type": "string",
+        "usage": "Project ID, instead of the argument"
       }
     ]
   },
@@ -239,7 +257,15 @@
     "path": "reearth visualizer project restore",
     "usage": "reearth visualizer project restore \u003cproject-id\u003e [flags]",
     "short": "Restore a project from the trash",
-    "runnable": true
+    "runnable": true,
+    "flags": [
+      {
+        "name": "project",
+        "shorthand": "p",
+        "type": "string",
+        "usage": "Project ID, instead of the argument"
+      }
+    ]
   },
   {
     "path": "reearth visualizer project publish",
@@ -256,6 +282,12 @@
         "name": "index",
         "type": "bool",
         "usage": "Let search engines index the published project"
+      },
+      {
+        "name": "project",
+        "shorthand": "p",
+        "type": "string",
+        "usage": "Project ID, instead of the argument"
       }
     ]
   },
@@ -263,7 +295,15 @@
     "path": "reearth visualizer project unpublish",
     "usage": "reearth visualizer project unpublish \u003cproject-id\u003e [flags]",
     "short": "Take a published project offline",
-    "runnable": true
+    "runnable": true,
+    "flags": [
+      {
+        "name": "project",
+        "shorthand": "p",
+        "type": "string",
+        "usage": "Project ID, instead of the argument"
+      }
+    ]
   },
   {
     "path": "reearth visualizer project export",
@@ -281,6 +321,12 @@
         "shorthand": "o",
         "type": "string",
         "usage": "Zip path, or - for stdout (default: \u003cproject-id\u003e.zip)"
+      },
+      {
+        "name": "project",
+        "shorthand": "p",
+        "type": "string",
+        "usage": "Project ID, instead of the argument"
       }
     ]
   },
@@ -330,6 +376,12 @@
         "name": "index",
         "type": "bool",
         "usage": "Let search engines index the published story"
+      },
+      {
+        "name": "project",
+        "shorthand": "p",
+        "type": "string",
+        "usage": "Project ID, instead of the argument"
       }
     ]
   },
@@ -337,7 +389,15 @@
     "path": "reearth visualizer story unpublish",
     "usage": "reearth visualizer story unpublish \u003cproject-id\u003e [flags]",
     "short": "Take a project's published story offline",
-    "runnable": true
+    "runnable": true,
+    "flags": [
+      {
+        "name": "project",
+        "shorthand": "p",
+        "type": "string",
+        "usage": "Project ID, instead of the argument"
+      }
+    ]
   },
   {
     "path": "reearth visualizer plugin",

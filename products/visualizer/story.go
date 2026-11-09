@@ -34,10 +34,11 @@ func newCmdStory(f *core.Factory) *cobra.Command {
 
 A project has one story, which is published separately from the project's
 map, with its own alias and URL. Story commands take the project ID, read
-like the project commands: the argument, REEARTH_VISUALIZER_PROJECT, then
-visualizer.project in .reearth.yaml. unpublish only takes the argument.`,
+like the project commands: the argument or --project,
+REEARTH_VISUALIZER_PROJECT, then visualizer.project in .reearth.yaml.
+unpublish only takes the argument or --project.`,
 	}
-	cmd.AddCommand(newCmdStoryPublish(f), newCmdStoryUnpublish(f))
+	cmd.AddCommand(withProjectFlag(newCmdStoryPublish(f), false), withProjectFlag(newCmdStoryUnpublish(f), true))
 	return cmd
 }
 

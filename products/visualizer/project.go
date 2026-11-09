@@ -24,19 +24,20 @@ func newCmdProject(f *core.Factory) *cobra.Command {
 
 A project belongs to a workspace and has one scene, where layers, widgets and
 installed plugins live. Commands that take a project ID read it from the
-argument, then REEARTH_VISUALIZER_PROJECT, then visualizer.project in
-.reearth.yaml. delete, restore and unpublish only take the argument.`,
+argument or --project, then REEARTH_VISUALIZER_PROJECT, then
+visualizer.project in .reearth.yaml. delete, restore and unpublish only take
+the argument or --project.`,
 	}
 	cmd.AddCommand(
 		newCmdProjectList(f),
-		newCmdProjectView(f),
+		withProjectFlag(newCmdProjectView(f), false),
 		newCmdProjectCreate(f),
-		newCmdProjectEdit(f),
-		newCmdProjectDelete(f),
-		newCmdProjectRestore(f),
-		newCmdProjectPublish(f),
-		newCmdProjectUnpublish(f),
-		newCmdProjectExport(f),
+		withProjectFlag(newCmdProjectEdit(f), false),
+		withProjectFlag(newCmdProjectDelete(f), true),
+		withProjectFlag(newCmdProjectRestore(f), true),
+		withProjectFlag(newCmdProjectPublish(f), false),
+		withProjectFlag(newCmdProjectUnpublish(f), true),
+		withProjectFlag(newCmdProjectExport(f), false),
 		newCmdProjectImport(f),
 	)
 	return cmd
@@ -70,6 +71,26 @@ func resolveProject(f *core.Factory, args []string) (string, error) {
 		return id, nil
 	}
 	return "", cmdutil.NoInputError("a project ID", "<project-id> or set REEARTH_VISUALIZER_PROJECT")
+}
+
+func withProjectFlag(cmd *cobra.Command, required bool) *cobra.Command {
+	var project string
+	cmd.Flags().StringVarP(&project, "project", "p", "", "Project ID, instead of the argument")
+	cmd.Args = cobra.MaximumNArgs(1)
+	run := cmd.RunE
+	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+		if project != "" {
+			if len(args) > 0 && args[0] != project {
+				return cmdutil.FlagErrorf("pass the project ID as an argument or with --project, not both")
+			}
+			args = []string{project}
+		}
+		if required && len(args) == 0 {
+			return cmdutil.FlagErrorf("a project ID is required: pass it as an argument or with --project")
+		}
+		return run(cmd, args)
+	}
+	return cmd
 }
 
 func newCmdProjectList(f *core.Factory) *cobra.Command {
