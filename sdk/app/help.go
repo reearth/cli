@@ -2,6 +2,7 @@ package app
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -19,16 +20,16 @@ const usageTemplate = `{{agentNote .}}{{heading "Usage"}}{{if .Runnable}}
 {{.Example}}{{end}}{{if .HasAvailableSubCommands}}{{$cmds := .Commands}}{{if eq (len .Groups) 0}}
 
 {{heading "Commands"}}{{range $cmds}}{{if .IsAvailableCommand}}
-  {{rpad .Name .NamePadding}}  {{dim .Short}}{{end}}{{end}}{{else}}{{range $group := .Groups}}{{if hasGroup $cmds $group.ID}}
+  {{rpad (label .) (labelPad $.Commands)}}  {{dim .Short}}{{end}}{{end}}{{else}}{{range $group := .Groups}}{{if hasGroup $cmds $group.ID}}
 
 {{heading $group.Title}}{{range $cmds}}{{if (and (eq .GroupID $group.ID) .IsAvailableCommand)}}
-  {{rpad .Name .NamePadding}}  {{dim .Short}}{{end}}{{end}}{{end}}{{end}}{{if not .AllChildCommandsHaveGroup}}
+  {{rpad (label .) (labelPad $.Commands)}}  {{dim .Short}}{{end}}{{end}}{{end}}{{end}}{{if not .AllChildCommandsHaveGroup}}
 
 {{heading "Additional Commands"}}{{range $cmds}}{{if (and (eq .GroupID "") .IsAvailableCommand)}}
-  {{rpad .Name .NamePadding}}  {{dim .Short}}{{end}}{{end}}{{end}}{{end}}{{end}}{{if .HasHelpSubCommands}}
+  {{rpad (label .) (labelPad $.Commands)}}  {{dim .Short}}{{end}}{{end}}{{end}}{{end}}{{end}}{{if .HasHelpSubCommands}}
 
 {{heading "Help topics"}}{{range .Commands}}{{if .IsAdditionalHelpTopicCommand}}
-  {{rpad .Name .NamePadding}}  {{dim .Short}}{{end}}{{end}}{{end}}{{if .HasAvailableLocalFlags}}
+  {{rpad (label .) (labelPad $.Commands)}}  {{dim .Short}}{{end}}{{end}}{{end}}{{if .HasAvailableLocalFlags}}
 
 {{heading "Flags"}}
 {{.LocalFlags.FlagUsages | trimTrailingWhitespaces}}{{end}}{{if .HasAvailableInheritedFlags}}
@@ -52,10 +53,27 @@ func setHelp(root *cobra.Command, f *core.Factory) {
 		}
 		return false
 	})
+	cobra.AddTemplateFunc("label", commandLabel)
+	cobra.AddTemplateFunc("labelPad", func(cmds []*cobra.Command) int {
+		pad := 11
+		for _, c := range cmds {
+			if c.IsAvailableCommand() || c.IsAdditionalHelpTopicCommand() {
+				pad = max(pad, len(commandLabel(c)))
+			}
+		}
+		return pad
+	})
 	cobra.AddTemplateFunc("agentNote", func(c *cobra.Command) string {
 		return agentNote(f, c)
 	})
 	root.SetUsageTemplate(usageTemplate)
+}
+
+func commandLabel(c *cobra.Command) string {
+	if len(c.Aliases) == 0 {
+		return c.Name()
+	}
+	return c.Name() + " (" + strings.Join(c.Aliases, ", ") + ")"
 }
 
 // agentNote steers coding agents to `search` on the help of command groups,
