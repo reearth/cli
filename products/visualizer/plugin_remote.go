@@ -2,6 +2,7 @@ package visualizer
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -65,7 +66,10 @@ is removed.`,
 				label       string
 			)
 			if fromURL != "" {
-				b := fmt.Appendf(nil, `{"url":%q}`, fromURL)
+				b, err := json.Marshal(map[string]string{"url": fromURL})
+				if err != nil {
+					return err
+				}
 				body, contentType, label = bytes.NewReader(b), "application/json", fromURL
 			} else {
 				b, v, err := packForPush(f, dir)
