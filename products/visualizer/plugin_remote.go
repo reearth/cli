@@ -226,9 +226,7 @@ func packForPush(f *core.Factory, dir string) ([]byte, *validation, error) {
 		return nil, nil, err
 	}
 	if size, err := writeZip(out, files, maxPackageSize); errors.Is(err, errTooLarge) {
-		return nil, nil, cmdutil.NewError(cmdutil.ExitError, "visualizer.package_too_large",
-			fmt.Sprintf("the package would be %.1f MB; Visualizer accepts up to 10 MB", float64(size)/(1<<20)),
-			"remove large files from the plugin, or load large data from a URL at run time")
+		return nil, nil, packageTooLarge(size)
 	} else if err != nil {
 		return nil, nil, err
 	}
