@@ -256,6 +256,24 @@ func TestDestructiveCommandsNeedProjectArg(t *testing.T) {
 	}
 }
 
+func TestProjectDeletePermanent(t *testing.T) {
+	api := newFakeAPI(t, map[string]http.HandlerFunc{
+		"DELETE /projects/p1": func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) },
+	})
+	setup(t, api, nil)
+
+	if r := run(t, "vis", "project", "delete", "p1", "--yes"); r.code != 0 || !strings.Contains(r.errOut, "trash") {
+		t.Fatalf("delete: %+v", r)
+	}
+	if r := run(t, "vis", "project", "delete", "p1", "--permanent", "--yes"); r.code != 0 || !strings.Contains(r.errOut, "Permanently deleted") {
+		t.Fatalf("delete --permanent: %+v", r)
+	}
+	got := api.reqs()
+	if len(got) != 2 || got[0].Query != "" || got[1].Query != "permanent=true" {
+		t.Fatalf("requests: %+v", got)
+	}
+}
+
 func TestAPIErrorsMapToExitCodes(t *testing.T) {
 	api := newFakeAPI(t, map[string]http.HandlerFunc{
 		"GET /projects/missing":   apiError(404, "not_found", "project not found"),

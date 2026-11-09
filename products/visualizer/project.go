@@ -383,36 +383,54 @@ Only the flags you pass are changed.`,
 }
 
 func newCmdProjectDelete(f *core.Factory) *cobra.Command {
-	return &cobra.Command{
+	var permanent bool
+	cmd := &cobra.Command{
 		Use:   "delete <project-id>",
-		Short: "Move a project to the trash",
-		Long: `Move a project to the trash. It can be restored from the web app until
-the trash is emptied. Asks for confirmation unless --yes is passed.`,
+		Short: "Move a project to the trash, or delete it permanently",
+		Long: `Move a project to the trash. It can be restored with "project restore"
+until the trash is emptied. With --permanent, a project that is already in
+the trash is deleted for good and cannot be restored. Asks for confirmation
+unless --yes is passed.`,
 		Example: `  $ reearth vis project delete 01hq...
-  $ reearth vis project delete 01hq... --yes`,
+  $ reearth vis project delete 01hq... --yes
+  $ reearth vis project delete 01hq... --permanent`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id := args[0]
-			if err := f.Confirm(fmt.Sprintf("Move project %s to the trash?", id)); err != nil {
+			prompt := fmt.Sprintf("Move project %s to the trash?", id)
+			if permanent {
+				prompt = fmt.Sprintf("Permanently delete project %s? This cannot be undone.", id)
+			}
+			if err := f.Confirm(prompt); err != nil {
 				return err
 			}
 			c, err := newClient(cmd.Context(), f)
 			if err != nil {
 				return err
 			}
-			if err := c.doJSON(cmd.Context(), http.MethodDelete, "/projects/"+url.PathEscape(id), nil, nil, nil); err != nil {
+			var query url.Values
+			if permanent {
+				query = url.Values{"permanent": {"true"}}
+			}
+			if err := c.doJSON(cmd.Context(), http.MethodDelete, "/projects/"+url.PathEscape(id), query, nil, nil); err != nil {
 				return err
 			}
 			p, err := f.Printer()
 			if err != nil {
 				return err
 			}
-			return p.Print(map[string]any{"id": id, "deleted": true}, func() error {
-				f.IO.Success("Moved project %s to the trash", id)
+			return p.Print(map[string]any{"id": id, "deleted": true, "permanent": permanent}, func() error {
+				if permanent {
+					f.IO.Success("Permanently deleted project %s", id)
+				} else {
+					f.IO.Success("Moved project %s to the trash", id)
+				}
 				return nil
 			})
 		},
 	}
+	cmd.Flags().BoolVar(&permanent, "permanent", false, "Delete for good; the project must already be in the trash")
+	return cmd
 }
 
 func newCmdProjectRestore(f *core.Factory) *cobra.Command {

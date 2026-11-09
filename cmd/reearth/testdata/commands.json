@@ -225,8 +225,15 @@
   {
     "path": "reearth visualizer project delete",
     "usage": "reearth visualizer project delete \u003cproject-id\u003e [flags]",
-    "short": "Move a project to the trash",
-    "runnable": true
+    "short": "Move a project to the trash, or delete it permanently",
+    "runnable": true,
+    "flags": [
+      {
+        "name": "permanent",
+        "type": "bool",
+        "usage": "Delete for good; the project must already be in the trash"
+      }
+    ]
   },
   {
     "path": "reearth visualizer project restore",
