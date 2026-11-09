@@ -84,7 +84,7 @@ func newCmdProjectList(f *core.Factory) *cobra.Command {
 		Long: `List the projects of a workspace, most recently updated first.
 
 Projects in the trash are left out unless --deleted is set. --keyword and
---sort are ignored with --starred or --deleted.`,
+--sort cannot be combined with --starred or --deleted.`,
 		Example: `  $ reearth vis project list
   $ reearth vis project list --keyword park --limit 5
   $ reearth vis project list --all --json id,name`,
@@ -92,6 +92,12 @@ Projects in the trash are left out unless --deleted is set. --keyword and
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if limit < 1 || limit > 100 {
 				return cmdutil.FlagErrorf("--limit must be between 1 and 100")
+			}
+			if starred && deleted {
+				return cmdutil.FlagErrorf("--starred and --deleted cannot be combined")
+			}
+			if (starred || deleted) && (keyword != "" || sort != "") {
+				return cmdutil.FlagErrorf("--keyword and --sort cannot be combined with --starred or --deleted")
 			}
 			ws, err := resolveWorkspace(f, workspace)
 			if err != nil {
@@ -261,23 +267,32 @@ func printProject(f *core.Factory, pr *project) error {
 }
 
 func newCmdProjectCreate(f *core.Factory) *cobra.Command {
-	var workspace, name, description, alias string
+	var workspace, name, description, alias, visibility string
 	cmd := &cobra.Command{
 		Use:   "create",
 		Short: "Create a project",
 		Long: `Create a project with its scene.
 
+--visibility is required: public or private. Private projects need a
+workspace on a paid plan; on a free plan the server refuses them.
+
 --alias sets the project alias, a short name for the project that is unique
 in the workspace: 5 to 32 letters, digits and '-', starting and ending with a
 letter or digit. Without it, the alias is "p-<project-id>". It is not the
 published URL; "project publish --alias" sets that.`,
-		Example: `  $ reearth vis project create --name "City parks"
-  $ reearth vis project create --name "City parks" --alias city-parks
-  $ reearth vis project create --name demo --jq .id`,
+		Example: `  $ reearth vis project create --name "City parks" --visibility public
+  $ reearth vis project create --name "City parks" --visibility private --alias city-parks
+  $ reearth vis project create --name demo --visibility public --jq .id`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if name == "" {
 				return cmdutil.NoInputError("a project name", "--name")
+			}
+			if visibility == "" {
+				return cmdutil.NoInputError("a visibility", "--visibility public or --visibility private")
+			}
+			if visibility != "public" && visibility != "private" {
+				return cmdutil.FlagErrorf("--visibility must be public or private")
 			}
 			ws, err := resolveWorkspace(f, workspace)
 			if err != nil {
@@ -287,7 +302,7 @@ published URL; "project publish --alias" sets that.`,
 			if err != nil {
 				return err
 			}
-			body := map[string]any{"name": name}
+			body := map[string]any{"name": name, "visibility": visibility}
 			if description != "" {
 				body["description"] = description
 			}
@@ -307,6 +322,7 @@ published URL; "project publish --alias" sets that.`,
 	fl.StringVar(&name, "name", "", "Project name")
 	fl.StringVar(&description, "description", "", "Project description")
 	fl.StringVar(&alias, "alias", "", "Project alias, unique in the workspace (default: p-<project-id>)")
+	fl.StringVar(&visibility, "visibility", "", "Project visibility: public or private (private needs a paid plan)")
 	return cmd
 }
 

@@ -1,0 +1,31 @@
+// Runs in the plugin sandbox (QuickJS): Re:Earth APIs only, no DOM or fetch.
+// UI, DOM and network access belong in the iframe passed to reearth.ui.show.
+reearth.ui.show(`
+<style>
+  body { margin: 0; font-family: sans-serif; }
+  .box { padding: 12px; background: #fff; border-radius: 6px; }
+</style>
+<div class="box" id="message"></div>
+<script>
+  window.addEventListener("message", (e) => {
+    if (e.data?.type !== "message") return;
+    document.getElementById("message").textContent = e.data.message;
+  });
+  // Ask for Message now and every couple of seconds, so an edit in the
+  // inspector shows up without a reload.
+  const getMessage = () => parent.postMessage({ type: "getMessage" }, "*");
+  getMessage();
+  setInterval(getMessage, 2000);
+</script>
+`);
+
+// Reply with the current Message. reearth.extension is read on every request
+// because it returns the property as it is now; an object kept from an
+// earlier read does not change. A field's defaultValue is not returned until
+// the user sets it, so fall back in code.
+reearth.extension.on("message", (msg) => {
+  if (msg?.type !== "getMessage") return;
+  const ext = reearth.extension.widget ?? reearth.extension.block;
+  const message = ext?.property?.default?.message ?? {{quote (print "Hello from " .Name)}};
+  reearth.ui.postMessage({ type: "message", message });
+});

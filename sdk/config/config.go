@@ -34,6 +34,11 @@ type Config struct {
 	Active   string                `yaml:"active,omitempty"`
 	Accounts map[string]*Account   `yaml:"accounts,omitempty"`
 	Envs     map[string]*EnvConfig `yaml:"envs,omitempty"`
+	// Hostname is the hostname for the OAuth redirect listener (default: "localhost").
+	Hostname string `yaml:"hostname,omitempty"`
+	// Port fixes the OAuth loopback port used during login (0 = random).
+	// Register http://<hostname>:<port>/callback in your Auth0 allowed callback URLs.
+	Port int `yaml:"port,omitempty"`
 	// Settings keeps values of keys this version does not know as written.
 	Settings map[string]any `yaml:"settings,omitempty"`
 	// Extra keeps top-level fields this version does not know, so that saving

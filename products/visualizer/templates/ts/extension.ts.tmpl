@@ -1,0 +1,14 @@
+import html from "@distui/{{.ID}}/main/index.html?raw";
+
+import { GlobalThis } from "@/shared/reearthTypes";
+
+const reearth = (globalThis as unknown as GlobalThis).reearth;
+reearth.ui.show(html);
+
+// Messages from the UI (postMsg in ./main/hooks.ts)
+reearth.extension.on("message", (message: unknown) => {
+  const msg = message as { action: string; payload?: unknown };
+  if (msg?.action === "hello") {
+    console.log("{{.ID}}: hello from the UI", msg.payload);
+  }
+});

@@ -2,9 +2,12 @@ package visualizer
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -15,9 +18,6 @@ import (
 )
 
 const projectUsage = "Project ID (default: REEARTH_VISUALIZER_PROJECT, then .reearth.yaml)"
-
-// maxPluginSize is the API's upload limit.
-const maxPluginSize = 10 << 20
 
 func projectFromFlag(f *core.Factory, flagValue string) (string, error) {
 	if flagValue == "" {
@@ -31,24 +31,28 @@ func pluginsPath(projectID string) string {
 }
 
 func newCmdPluginPush(f *core.Factory) *cobra.Command {
-	var projectID, fromURL string
+	var projectID, dir, fromURL string
 	cmd := &cobra.Command{
-		Use:   "push [dir]",
+		Use:   "push",
 		Short: "Upload a plugin and install it in a project",
-		Long: `Validate and pack the plugin in [dir] (default: the current directory),
+		Long: `Validate and pack the plugin in --dir as ` + "`reearth visualizer plugin pack`" + ` does,
 upload it and install it in a project. With --url, the server downloads the
-plugin zip from that URL instead.
+plugin from a GitHub repository instead: https://github.com/<owner>/<repo>,
+optionally followed by /tree/<branch>.
 
 Pushing the same plugin ID and version again replaces it. A new version
 upgrades the installed one: the project switches to it and the old version
 is removed.`,
 		Example: `  $ reearth vis plugin push --project 01hq...
-  $ reearth vis plugin push ./my-widget --project 01hq...
-  $ reearth vis plugin push --url https://example.com/my-widget.zip --project 01hq...`,
-		Args: cobra.MaximumNArgs(1),
+  $ reearth vis plugin push --dir my-widget --project 01hq...
+  $ reearth vis plugin push --url https://github.com/owner/my-widget --project 01hq...`,
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if fromURL != "" && len(args) > 0 {
-				return cmdutil.FlagErrorf("pass either [dir] or --url, not both")
+			if fromURL != "" && cmd.Flags().Changed("dir") {
+				return cmdutil.FlagErrorf("pass either --dir or --url, not both")
+			}
+			if fromURL != "" && !isGitHubRepoURL(fromURL) {
+				return cmdutil.FlagErrorf("--url must be a GitHub repository URL, such as https://github.com/owner/repo")
 			}
 			pid, err := projectFromFlag(f, projectID)
 			if err != nil {
@@ -64,19 +68,11 @@ is removed.`,
 				b := fmt.Appendf(nil, `{"url":%q}`, fromURL)
 				body, contentType, label = bytes.NewReader(b), "application/json", fromURL
 			} else {
-				dir := dirArg(args)
-				m, err := loadPlugin(dir)
+				b, v, err := packForPush(f, dir)
 				if err != nil {
 					return err
 				}
-				var buf bytes.Buffer
-				if _, err := zipPlugin(dir, &buf, ""); err != nil {
-					return err
-				}
-				if buf.Len() > maxPluginSize {
-					return cmdutil.FlagErrorf("the plugin zip is %d bytes; the limit is 10 MB", buf.Len())
-				}
-				body, contentType, label = bytes.NewReader(buf.Bytes()), "application/zip", m.ID+" "+m.Version
+				body, contentType, label = bytes.NewReader(b), "application/zip", v.ID+" "+v.Version
 			}
 
 			c, err := newClient(cmd.Context(), f)
@@ -103,7 +99,8 @@ is removed.`,
 	}
 	fl := cmd.Flags()
 	fl.StringVarP(&projectID, "project", "p", "", projectUsage)
-	fl.StringVar(&fromURL, "url", "", "Have the server download the plugin zip from this URL")
+	fl.StringVar(&dir, "dir", ".", "Plugin directory")
+	fl.StringVar(&fromURL, "url", "", "Have the server download the plugin from this GitHub repository URL")
 	return cmd
 }
 
@@ -201,4 +198,45 @@ func newCmdPluginUninstall(f *core.Factory) *cobra.Command {
 	}
 	cmd.Flags().StringVarP(&projectID, "project", "p", "", projectUsage)
 	return cmd
+}
+
+func packForPush(f *core.Factory, dir string) ([]byte, *validation, error) {
+	v, err := validatePlugin(dir)
+	if err != nil {
+		return nil, nil, err
+	}
+	if !v.Valid {
+		for _, i := range v.Issues {
+			f.IO.Warn("%s: %s", i.Path, i.Message)
+		}
+		return nil, nil, invalidError(v)
+	}
+	tmp, err := os.MkdirTemp("", "reearth-plugin-push-*")
+	if err != nil {
+		return nil, nil, err
+	}
+	defer func() { _ = os.RemoveAll(tmp) }()
+	out := filepath.Join(tmp, v.ID+"-"+v.Version+".zip")
+	files, err := packFiles(v, out)
+	if err != nil {
+		return nil, nil, err
+	}
+	if size, err := writeZip(out, files, maxPackageSize); errors.Is(err, errTooLarge) {
+		return nil, nil, cmdutil.NewError(cmdutil.ExitError, "visualizer.package_too_large",
+			fmt.Sprintf("the package would be %.1f MB; Visualizer accepts up to 10 MB", float64(size)/(1<<20)),
+			"remove large files from the plugin, or load large data from a URL at run time")
+	} else if err != nil {
+		return nil, nil, err
+	}
+	b, err := os.ReadFile(out)
+	return b, v, err
+}
+
+func isGitHubRepoURL(s string) bool {
+	u, err := url.Parse(s)
+	if err != nil || (u.Scheme != "https" && u.Scheme != "http") || !strings.EqualFold(u.Host, "github.com") {
+		return false
+	}
+	parts := strings.Split(strings.Trim(u.Path, "/"), "/")
+	return len(parts) >= 2 && parts[0] != "" && parts[1] != ""
 }

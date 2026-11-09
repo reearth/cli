@@ -1,0 +1,30 @@
+import useHooks from "./hooks";
+
+import { Button } from "@/shared/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/shared/components/ui/card";
+
+function App() {
+  const { handleHello } = useHooks();
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>{ {{- quote .Name -}} }</CardTitle>
+        <CardDescription>Edit src/extensions/{{.ID}}/main/App.tsx</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <Button size="sm" onClick={handleHello}>
+          Say hello
+        </Button>
+      </CardContent>
+    </Card>
+  );
+}
+
+export default App;

@@ -125,7 +125,7 @@ func TestLoopbackLoginUsesPKCE(t *testing.T) {
 		if q.Get("audience") != "https://api.test" {
 			t.Errorf("audience = %q", q.Get("audience"))
 		}
-		if !strings.HasPrefix(q.Get("redirect_uri"), "http://127.0.0.1:") {
+		if !strings.HasPrefix(q.Get("redirect_uri"), "http://localhost:") {
 			t.Errorf("redirect_uri = %q", q.Get("redirect_uri"))
 		}
 		fa.mu.Lock()

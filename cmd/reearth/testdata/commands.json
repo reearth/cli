@@ -89,7 +89,7 @@
   {
     "path": "reearth visualizer",
     "usage": "reearth visualizer [flags]",
-    "short": "Manage Re:Earth Visualizer projects and plugins",
+    "short": "Manage Re:Earth Visualizer projects and develop plugins",
     "aliases": [
       "vis"
     ],
@@ -180,6 +180,11 @@
         "name": "name",
         "type": "string",
         "usage": "Project name"
+      },
+      {
+        "name": "visibility",
+        "type": "string",
+        "usage": "Project visibility: public or private (private needs a paid plan)"
       },
       {
         "name": "workspace",
@@ -330,29 +335,40 @@
   {
     "path": "reearth visualizer plugin",
     "usage": "reearth visualizer plugin [flags]",
-    "short": "Create, package and install Visualizer plugins",
+    "short": "Create, run, package and install Visualizer plugins",
     "runnable": false
   },
   {
     "path": "reearth visualizer plugin init",
-    "usage": "reearth visualizer plugin init \u003cdir\u003e [flags]",
-    "short": "Create a plugin from a template",
+    "usage": "reearth visualizer plugin init [dir] [flags]",
+    "short": "Create a plugin from the js or ts template",
     "runnable": true,
     "flags": [
       {
         "name": "extension-id",
         "type": "string",
-        "usage": "Extension ID, also its file name (default: the plugin ID)"
+        "usage": "Extension ID; for js also the .js file name (default: plugin ID)"
       },
       {
         "name": "id",
         "type": "string",
-        "usage": "Plugin ID (default: the directory name)"
+        "usage": "Plugin ID (default: directory name)"
       },
       {
         "name": "name",
         "type": "string",
-        "usage": "Display name (default: the plugin ID)"
+        "usage": "Display name (default: plugin ID)"
+      },
+      {
+        "name": "refresh",
+        "type": "bool",
+        "usage": "Download the ts template again instead of using the cache"
+      },
+      {
+        "name": "template",
+        "type": "string",
+        "default": "js",
+        "usage": "Template: js or ts"
       },
       {
         "name": "type",
@@ -363,31 +379,122 @@
     ]
   },
   {
+    "path": "reearth visualizer plugin add",
+    "usage": "reearth visualizer plugin add [extension-id] [flags]",
+    "short": "Add an extension to a plugin",
+    "runnable": true,
+    "flags": [
+      {
+        "name": "dir",
+        "type": "string",
+        "default": ".",
+        "usage": "Plugin directory"
+      },
+      {
+        "name": "name",
+        "type": "string",
+        "usage": "Display name (default: extension ID)"
+      },
+      {
+        "name": "type",
+        "type": "string",
+        "default": "widget",
+        "usage": "Extension type: widget, storyBlock, infoboxBlock"
+      }
+    ]
+  },
+  {
+    "path": "reearth visualizer plugin dev",
+    "usage": "reearth visualizer plugin dev [flags]",
+    "short": "Serve a plugin locally, reloading on every save",
+    "runnable": true,
+    "flags": [
+      {
+        "name": "dir",
+        "type": "string",
+        "default": ".",
+        "usage": "Plugin directory"
+      },
+      {
+        "name": "no-open",
+        "type": "bool",
+        "usage": "Don't open the viewer in a browser"
+      },
+      {
+        "name": "port",
+        "type": "int",
+        "default": "5180",
+        "usage": "Port to listen on (0 picks a free one)"
+      },
+      {
+        "name": "viewer",
+        "type": "bool",
+        "usage": "Download and serve the Visualizer viewer"
+      },
+      {
+        "name": "viewer-dir",
+        "type": "string",
+        "usage": "Serve this local viewer build"
+      },
+      {
+        "name": "viewer-url",
+        "type": "string",
+        "usage": "Open the viewer running at this URL"
+      },
+      {
+        "name": "viewer-version",
+        "type": "string",
+        "default": "latest",
+        "usage": "Viewer version to download: latest, nightly, or a specific version like v1.0.0"
+      }
+    ]
+  },
+  {
     "path": "reearth visualizer plugin validate",
-    "usage": "reearth visualizer plugin validate [dir] [flags]",
-    "short": "Check a plugin before packing it",
-    "runnable": true
+    "usage": "reearth visualizer plugin validate [flags]",
+    "short": "Check a plugin's manifest and files before uploading",
+    "runnable": true,
+    "flags": [
+      {
+        "name": "dir",
+        "type": "string",
+        "default": ".",
+        "usage": "Plugin directory"
+      }
+    ]
   },
   {
     "path": "reearth visualizer plugin pack",
-    "usage": "reearth visualizer plugin pack [dir] [flags]",
-    "short": "Validate a plugin and zip it for upload",
+    "usage": "reearth visualizer plugin pack [flags]",
+    "short": "Zip a plugin for uploading to Visualizer",
     "runnable": true,
     "flags": [
+      {
+        "name": "dir",
+        "type": "string",
+        "default": ".",
+        "usage": "Plugin directory"
+      },
       {
         "name": "output",
         "shorthand": "o",
         "type": "string",
-        "usage": "Zip path (default: \u003cid\u003e-\u003cversion\u003e.zip)"
+        "usage": "Zip file to write (default: \u003cdir\u003e/package/\u003cid\u003e-\u003cversion\u003e.zip)"
       }
     ]
   },
   {
     "path": "reearth visualizer plugin push",
-    "usage": "reearth visualizer plugin push [dir] [flags]",
+    "usage": "reearth visualizer plugin push [flags]",
     "short": "Upload a plugin and install it in a project",
     "runnable": true,
     "flags": [
+      {
+        "name": "dir",
+        "type": "string",
+        "default": ".",
+        "usage": "Plugin directory"
+      },
       {
         "name": "project",
         "shorthand": "p",
@@ -397,7 +504,7 @@
       {
         "name": "url",
         "type": "string",
-        "usage": "Have the server download the plugin zip from this URL"
+        "usage": "Have the server download the plugin from this GitHub repository URL"
       }
     ]
   },
