@@ -157,9 +157,16 @@ func uploadImportToURL(ctx context.Context, f *core.Factory, c *client, ws strin
 		return "", false, err
 	}
 
+	if err := putImport(ctx, f, &res, file, size); err != nil {
+		return "", false, discardImport(ctx, c, res.ProjectID, err)
+	}
+	return res.ProjectID, true, nil
+}
+
+func putImport(ctx context.Context, f *core.Factory, res *importUploadResponse, file io.ReaderAt, size int64) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPut, res.UploadURL, io.NewSectionReader(file, 0, size))
 	if err != nil {
-		return "", false, err
+		return err
 	}
 	// Each attempt reads the file from the start, so the client can retry
 	// the upload after a temporary storage error.
@@ -172,14 +179,31 @@ func uploadImportToURL(ctx context.Context, f *core.Factory, c *client, ws strin
 	resp, err := f.PublicHTTPClient().Do(req)
 	f.IO.StopProgress()
 	if err != nil {
-		return "", false, err
+		return err
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		b, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-		return "", false, fmt.Errorf("upload to storage failed: %s: %s", resp.Status, bytes.TrimSpace(b))
+		return fmt.Errorf("upload to storage failed: %s: %s", resp.Status, bytes.TrimSpace(b))
 	}
-	return res.ProjectID, true, nil
+	return nil
+}
+
+func discardImport(ctx context.Context, c *client, id string, cause error) error {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+	defer cancel()
+	path := "/projects/" + url.PathEscape(id)
+	if err := c.doJSON(ctx, http.MethodDelete, path, nil, nil, nil); err != nil {
+		return &cmdutil.Error{
+			Exit:    cmdutil.ExitCode(cause),
+			Code:    "visualizer.import_upload_failed",
+			Message: fmt.Sprintf("%v; the unfinished project %s could not be removed", cause, id),
+			Hint:    "delete it with: reearth vis project delete " + id,
+			Err:     cause,
+		}
+	}
+	_ = c.doJSON(ctx, http.MethodDelete, path, url.Values{"permanent": {"true"}}, nil, nil)
+	return cause
 }
 
 // uploadImport sends the zip in chunks, in order, and returns the response

@@ -583,6 +583,7 @@ func TestProjectImportSignedURL(t *testing.T) {
 	t.Cleanup(storage.Close)
 
 	polls := 0
+	deleteFails := false
 	api := newFakeAPI(t, map[string]http.HandlerFunc{
 		"POST /workspaces/ws1/projects/import-url": func(w http.ResponseWriter, _ *http.Request) {
 			writeJSON(w, http.StatusCreated, map[string]any{
@@ -592,6 +593,13 @@ func TestProjectImportSignedURL(t *testing.T) {
 		},
 		"POST /workspaces/ws1/projects/import": func(w http.ResponseWriter, _ *http.Request) {
 			t.Error("used chunked upload on a server with upload URLs")
+		},
+		"DELETE /projects/p-new": func(w http.ResponseWriter, _ *http.Request) {
+			if deleteFails {
+				writeJSON(w, http.StatusInternalServerError, map[string]any{"error": map[string]any{"code": "internal", "message": "boom"}})
+				return
+			}
+			w.WriteHeader(http.StatusNoContent)
 		},
 		"GET /projects/p-new": func(w http.ResponseWriter, _ *http.Request) {
 			p := projectJSON("p-new", "Imported")
@@ -619,8 +627,21 @@ func TestProjectImportSignedURL(t *testing.T) {
 		w.WriteHeader(http.StatusForbidden)
 		_, _ = w.Write([]byte("SignatureDoesNotMatch"))
 	})
+	before := len(api.reqs())
 	if r := run(t, "vis", "project", "import", "p.zip"); r.code != cmdutil.ExitError || !strings.Contains(r.errOut, "SignatureDoesNotMatch") {
 		t.Fatalf("rejected upload: %+v", r)
+	}
+	got := api.reqs()[before:]
+	if len(got) != 3 || got[1].Method != http.MethodDelete || got[1].Query != "" ||
+		got[2].Method != http.MethodDelete || got[2].Query != "permanent=true" {
+		t.Fatalf("cleanup requests: %+v", got)
+	}
+
+	// When the cleanup fails too, the error names the project left behind.
+	deleteFails = true
+	if r := run(t, "vis", "project", "import", "p.zip"); r.code != cmdutil.ExitError ||
+		!strings.Contains(r.errOut, "SignatureDoesNotMatch") || !strings.Contains(r.errOut, "project delete p-new") {
+		t.Fatalf("failed cleanup: %+v", r)
 	}
 }
 
