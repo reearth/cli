@@ -379,7 +379,8 @@ func TestProjectExport(t *testing.T) {
 	})
 	setup(t, api, nil)
 
-	if r := run(t, "vis", "project", "export", "p1"); r.code != 0 || r.out != "p1.zip\n" {
+	want, _ := filepath.Abs("p1.zip")
+	if r := run(t, "vis", "project", "export", "p1"); r.code != 0 || r.out != want+"\n" || !strings.Contains(r.errOut, want) {
 		t.Fatalf("%+v", r)
 	}
 	if b, _ := os.ReadFile("p1.zip"); !bytes.Equal(b, zipData) {

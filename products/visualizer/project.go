@@ -636,13 +636,16 @@ take a while to build on the server.`,
 			if err := os.Rename(tmp.Name(), out); err != nil {
 				return err
 			}
+			if abs, err := filepath.Abs(out); err == nil {
+				out = abs
+			}
 
 			p, err := f.Printer()
 			if err != nil {
 				return err
 			}
 			return p.Print(map[string]any{"path": out, "bytes": n, "project": id}, func() error {
-				f.IO.Success("Exported project %s (%s)", id, humanBytes(n))
+				f.IO.Success("Exported project %s to %s (%s)", id, out, humanBytes(n))
 				_, err := fmt.Fprintln(f.IO.Out, out)
 				return err
 			})
