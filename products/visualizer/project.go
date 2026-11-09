@@ -25,7 +25,7 @@ func newCmdProject(f *core.Factory) *cobra.Command {
 A project belongs to a workspace and has one scene, where layers, widgets and
 installed plugins live. Commands that take a project ID read it from the
 argument, then REEARTH_VISUALIZER_PROJECT, then visualizer.project in
-.reearth.yaml.`,
+.reearth.yaml. delete, restore and unpublish only take the argument.`,
 	}
 	cmd.AddCommand(
 		newCmdProjectList(f),
@@ -384,18 +384,15 @@ Only the flags you pass are changed.`,
 
 func newCmdProjectDelete(f *core.Factory) *cobra.Command {
 	return &cobra.Command{
-		Use:   "delete [project-id]",
+		Use:   "delete <project-id>",
 		Short: "Move a project to the trash",
 		Long: `Move a project to the trash. It can be restored from the web app until
 the trash is emptied. Asks for confirmation unless --yes is passed.`,
 		Example: `  $ reearth vis project delete 01hq...
   $ reearth vis project delete 01hq... --yes`,
-		Args: cobra.MaximumNArgs(1),
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			id, err := resolveProject(f, args)
-			if err != nil {
-				return err
-			}
+			id := args[0]
 			if err := f.Confirm(fmt.Sprintf("Move project %s to the trash?", id)); err != nil {
 				return err
 			}
@@ -420,19 +417,16 @@ the trash is emptied. Asks for confirmation unless --yes is passed.`,
 
 func newCmdProjectRestore(f *core.Factory) *cobra.Command {
 	return &cobra.Command{
-		Use:   "restore [project-id]",
+		Use:   "restore <project-id>",
 		Short: "Restore a project from the trash",
 		Long: `Move a project out of the trash. Find the IDs of projects in the trash
 with "project list --deleted". Restoring a project that is not in the trash
 changes nothing.`,
 		Example: `  $ reearth vis project list --deleted
   $ reearth vis project restore 01hq...`,
-		Args: cobra.MaximumNArgs(1),
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			id, err := resolveProject(f, args)
-			if err != nil {
-				return err
-			}
+			id := args[0]
 			c, err := newClient(cmd.Context(), f)
 			if err != nil {
 				return err
@@ -481,18 +475,15 @@ when omitted; a project published for the first time gets "c-<scene-id>".`,
 
 func newCmdProjectUnpublish(f *core.Factory) *cobra.Command {
 	return &cobra.Command{
-		Use:   "unpublish [project-id]",
+		Use:   "unpublish <project-id>",
 		Short: "Take a published project offline",
 		Long: `Take a published project offline. Its published alias is kept, so
 publishing it again brings back the same URL. Asks for confirmation unless
 --yes is passed.`,
 		Example: `  $ reearth vis project unpublish 01hq...`,
-		Args:    cobra.MaximumNArgs(1),
+		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			id, err := resolveProject(f, args)
-			if err != nil {
-				return err
-			}
+			id := args[0]
 			if err := f.Confirm(fmt.Sprintf("Unpublish project %s? Its published URL stops working.", id)); err != nil {
 				return err
 			}

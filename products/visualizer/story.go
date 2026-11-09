@@ -35,7 +35,7 @@ func newCmdStory(f *core.Factory) *cobra.Command {
 A project has one story, which is published separately from the project's
 map, with its own alias and URL. Story commands take the project ID, read
 like the project commands: the argument, REEARTH_VISUALIZER_PROJECT, then
-visualizer.project in .reearth.yaml.`,
+visualizer.project in .reearth.yaml. unpublish only takes the argument.`,
 	}
 	cmd.AddCommand(newCmdStoryPublish(f), newCmdStoryUnpublish(f))
 	return cmd
@@ -73,18 +73,15 @@ time gets "s-<story-id>".`,
 
 func newCmdStoryUnpublish(f *core.Factory) *cobra.Command {
 	return &cobra.Command{
-		Use:   "unpublish [project-id]",
+		Use:   "unpublish <project-id>",
 		Short: "Take a project's published story offline",
 		Long: `Take a project's published story offline. Its alias is kept, so publishing
 it again brings back the same URL. Asks for confirmation unless --yes is
 passed.`,
 		Example: `  $ reearth vis story unpublish 01hq...`,
-		Args:    cobra.MaximumNArgs(1),
+		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			id, err := resolveProject(f, args)
-			if err != nil {
-				return err
-			}
+			id := args[0]
 			if err := f.Confirm(fmt.Sprintf("Unpublish the story of project %s? Its published URL stops working.", id)); err != nil {
 				return err
 			}

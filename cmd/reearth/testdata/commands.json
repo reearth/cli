@@ -224,13 +224,13 @@
   },
   {
     "path": "reearth visualizer project delete",
-    "usage": "reearth visualizer project delete [project-id] [flags]",
+    "usage": "reearth visualizer project delete \u003cproject-id\u003e [flags]",
     "short": "Move a project to the trash",
     "runnable": true
   },
   {
     "path": "reearth visualizer project restore",
-    "usage": "reearth visualizer project restore [project-id] [flags]",
+    "usage": "reearth visualizer project restore \u003cproject-id\u003e [flags]",
     "short": "Restore a project from the trash",
     "runnable": true
   },
@@ -254,7 +254,7 @@
   },
   {
     "path": "reearth visualizer project unpublish",
-    "usage": "reearth visualizer project unpublish [project-id] [flags]",
+    "usage": "reearth visualizer project unpublish \u003cproject-id\u003e [flags]",
     "short": "Take a published project offline",
     "runnable": true
   },
@@ -328,7 +328,7 @@
   },
   {
     "path": "reearth visualizer story unpublish",
-    "usage": "reearth visualizer story unpublish [project-id] [flags]",
+    "usage": "reearth visualizer story unpublish \u003cproject-id\u003e [flags]",
     "short": "Take a project's published story offline",
     "runnable": true
   },

@@ -237,6 +237,25 @@ func TestDestructiveCommandsNeedYes(t *testing.T) {
 	}
 }
 
+func TestDestructiveCommandsNeedProjectArg(t *testing.T) {
+	api := newFakeAPI(t, nil)
+	setup(t, api, envvar.Map{"REEARTH_VISUALIZER_PROJECT": "p9"})
+
+	for _, args := range [][]string{
+		{"vis", "project", "delete", "--yes"},
+		{"vis", "project", "restore"},
+		{"vis", "project", "unpublish", "--yes"},
+		{"vis", "story", "unpublish", "--yes"},
+	} {
+		if r := run(t, args...); r.code == 0 {
+			t.Fatalf("%v without a project ID: %+v", args, r)
+		}
+	}
+	if n := len(api.reqs()); n != 0 {
+		t.Fatalf("made %d requests", n)
+	}
+}
+
 func TestAPIErrorsMapToExitCodes(t *testing.T) {
 	api := newFakeAPI(t, map[string]http.HandlerFunc{
 		"GET /projects/missing":   apiError(404, "not_found", "project not found"),
