@@ -88,9 +88,7 @@ func (o *packOptions) run(f *core.Factory) error {
 		return err
 	}
 	if o.Size, err = writeZip(o.File, files, maxPackageSize); errors.Is(err, errTooLarge) {
-		return cmdutil.NewError(cmdutil.ExitError, "visualizer.package_too_large",
-			fmt.Sprintf("the package would be %.1f MB; Visualizer accepts up to 10 MB", float64(o.Size)/(1<<20)),
-			"remove large files from the plugin, or load large data from a URL at run time")
+		return packageTooLarge(o.Size)
 	} else if err != nil {
 		return err
 	}
@@ -104,7 +102,7 @@ func (o *packOptions) run(f *core.Factory) error {
 		return err
 	}
 	return pr.Print(o, func() error {
-		f.IO.Success("Packed %s %s into %s (%d files, %s)", o.ID, o.Version, o.File, len(o.Files), humanSize(o.Size))
+		f.IO.Success("Packed %s %s into %s (%d files, %s)", o.ID, o.Version, o.File, len(o.Files), humanBytes(o.Size))
 		return nil
 	})
 }
@@ -231,12 +229,8 @@ func addZipFile(zw *zip.Writer, name, src string) error {
 	return err
 }
 
-func humanSize(n int64) string {
-	switch {
-	case n >= 1<<20:
-		return fmt.Sprintf("%.1f MB", float64(n)/(1<<20))
-	case n >= 1<<10:
-		return fmt.Sprintf("%.1f KB", float64(n)/(1<<10))
-	}
-	return fmt.Sprintf("%d B", n)
+func packageTooLarge(size int64) error {
+	return cmdutil.NewError(cmdutil.ExitError, "visualizer.package_too_large",
+		fmt.Sprintf("the package would be %s; Visualizer accepts up to %s", humanBytes(size), humanBytes(maxPackageSize)),
+		"remove large files from the plugin, or load large data from a URL at run time")
 }

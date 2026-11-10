@@ -3,3 +3,4 @@ tmp/
 /dist/
 /completions/
 .idea
+/*.zip
