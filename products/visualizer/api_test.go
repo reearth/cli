@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -414,8 +415,10 @@ func TestProjectExport(t *testing.T) {
 	if b, _ := os.ReadFile("p1.zip"); !bytes.Equal(b, zipData) {
 		t.Fatalf("p1.zip = %q", b)
 	}
-	if fi, err := os.Stat("p1.zip"); err != nil || fi.Mode().Perm() != 0o644 {
-		t.Fatalf("p1.zip mode: %v %v", fi.Mode(), err)
+	if runtime.GOOS != "windows" {
+		if fi, err := os.Stat("p1.zip"); err != nil || fi.Mode().Perm() != 0o644 {
+			t.Fatalf("p1.zip mode: %v %v", fi.Mode(), err)
+		}
 	}
 
 	// An existing file is kept, without a request.
