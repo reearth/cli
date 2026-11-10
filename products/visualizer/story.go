@@ -80,7 +80,6 @@ func newCmdStoryUnpublish(f *core.Factory) *cobra.Command {
 it again brings back the same URL. Asks for confirmation unless --yes is
 passed.`,
 		Example: `  $ reearth vis story unpublish 01hq...`,
-		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id := args[0]
 			if err := f.Confirm(fmt.Sprintf("Unpublish the story of project %s? Its published URL stops working.", id)); err != nil {

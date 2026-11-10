@@ -256,6 +256,34 @@ func TestDestructiveCommandsNeedProjectArg(t *testing.T) {
 	}
 }
 
+func TestPluginUninstallNeedsProjectFlag(t *testing.T) {
+	api := newFakeAPI(t, nil)
+	setup(t, api, envvar.Map{"REEARTH_VISUALIZER_PROJECT": "p9"})
+
+	if r := run(t, "vis", "plugin", "uninstall", "pl1", "--yes"); r.code != cmdutil.ExitUsage || !strings.Contains(r.errOut, "--project") {
+		t.Fatalf("%+v", r)
+	}
+	if n := len(api.reqs()); n != 0 {
+		t.Fatalf("made %d requests", n)
+	}
+}
+
+func TestProjectImportRejectsNonPositiveTimeout(t *testing.T) {
+	api := newFakeAPI(t, nil)
+	setup(t, api, envvar.Map{"REEARTH_VISUALIZER_WORKSPACE": "ws1"})
+	if err := os.WriteFile("p.zip", []byte("PK\x03\x04 zip"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, v := range []string{"0", "-1m"} {
+		if r := run(t, "vis", "project", "import", "p.zip", "--timeout", v); r.code != cmdutil.ExitUsage {
+			t.Fatalf("--timeout %s: %+v", v, r)
+		}
+	}
+	if n := len(api.reqs()); n != 0 {
+		t.Fatalf("made %d requests", n)
+	}
+}
+
 func TestProjectFlag(t *testing.T) {
 	api := newFakeAPI(t, map[string]http.HandlerFunc{
 		"GET /projects/p1":    func(w http.ResponseWriter, _ *http.Request) { writeJSON(w, 200, projectJSON("p1", "A")) },
@@ -385,6 +413,9 @@ func TestProjectExport(t *testing.T) {
 	}
 	if b, _ := os.ReadFile("p1.zip"); !bytes.Equal(b, zipData) {
 		t.Fatalf("p1.zip = %q", b)
+	}
+	if fi, err := os.Stat("p1.zip"); err != nil || fi.Mode().Perm() != 0o644 {
+		t.Fatalf("p1.zip mode: %v %v", fi.Mode(), err)
 	}
 
 	// An existing file is kept, without a request.
@@ -696,7 +727,7 @@ func TestPluginPushAndList(t *testing.T) {
 	if b := jsonBody(t, api.reqs()[1]); b["url"] != "https://github.com/owner/hello" {
 		t.Fatalf("push --url body: %v", b)
 	}
-	for _, u := range []string{"https://example.com/p.zip", "https://github.com/owner", "ftp://github.com/owner/hello"} {
+	for _, u := range []string{"https://example.com/p.zip", "https://github.com/owner", "ftp://github.com/owner/hello", "http://github.com/owner/hello"} {
 		if r := run(t, "vis", "plugin", "push", "--url", u, "-p", "p1"); r.code != cmdutil.ExitUsage {
 			t.Fatalf("push --url %s: %+v", u, r)
 		}
@@ -733,7 +764,7 @@ func TestProjectViewWeb(t *testing.T) {
 }
 
 func TestHumanBytes(t *testing.T) {
-	for n, want := range map[int64]string{0: "0 B", 1023: "1023 B", 1024: "1.0 KB", 1536: "1.5 KB", 16 << 20: "16.0 MB"} {
+	for n, want := range map[int64]string{0: "0 B", 1023: "1023 B", 1024: "1.0 KB", 1536: "1.5 KB", 16 << 20: "16.0 MB", 1 << 50: "1.0 PB"} {
 		if got := humanBytes(n); got != want {
 			t.Errorf("humanBytes(%d) = %q, want %q", n, got, want)
 		}

@@ -172,14 +172,15 @@ func newCmdPluginUninstall(f *core.Factory) *cobra.Command {
 		Use:   "uninstall <plugin-id>",
 		Short: "Remove a plugin from a project",
 		Long: `Remove a plugin from a project. <plugin-id> is the full ID that
-"plugin list" prints. Asks for confirmation unless --yes is passed.`,
+"plugin list" prints. The project must be passed with --project; the default
+project is not used. Asks for confirmation unless --yes is passed.`,
 		Example: `  $ reearth vis plugin uninstall 01hq...~my-widget~1.0.0 --project 01hq...`,
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			pid, err := projectFromFlag(f, projectID)
-			if err != nil {
-				return err
+			if projectID == "" {
+				return cmdutil.FlagErrorf("a project ID is required: pass it with --project")
 			}
+			pid := projectID
 			if err := f.Confirm(fmt.Sprintf("Uninstall plugin %s from project %s?", args[0], pid)); err != nil {
 				return err
 			}
@@ -200,7 +201,7 @@ func newCmdPluginUninstall(f *core.Factory) *cobra.Command {
 			})
 		},
 	}
-	cmd.Flags().StringVarP(&projectID, "project", "p", "", projectUsage)
+	cmd.Flags().StringVarP(&projectID, "project", "p", "", "Project ID")
 	return cmd
 }
 
@@ -236,7 +237,7 @@ func packForPush(f *core.Factory, dir string) ([]byte, *validation, error) {
 
 func isGitHubRepoURL(s string) bool {
 	u, err := url.Parse(s)
-	if err != nil || (u.Scheme != "https" && u.Scheme != "http") || !strings.EqualFold(u.Host, "github.com") {
+	if err != nil || u.Scheme != "https" || !strings.EqualFold(u.Host, "github.com") {
 		return false
 	}
 	parts := strings.Split(strings.Trim(u.Path, "/"), "/")

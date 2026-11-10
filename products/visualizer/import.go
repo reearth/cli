@@ -59,6 +59,9 @@ status (UPLOADING, PROCESSING, SUCCESS or FAILED).`,
   $ reearth vis project import city-parks.zip --workspace 01hq... --no-wait`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if timeout <= 0 {
+				return cmdutil.FlagErrorf("--timeout must be greater than 0")
+			}
 			path := args[0]
 			file, err := os.Open(path)
 			if err != nil {
@@ -148,9 +151,7 @@ type importUploadResponse struct {
 func uploadImportToURL(ctx context.Context, f *core.Factory, c *client, ws string, file io.ReaderAt, size int64) (string, bool, error) {
 	var res importUploadResponse
 	err := c.doJSON(ctx, http.MethodPost, "/workspaces/"+url.PathEscape(ws)+"/projects/import-url", nil, nil, &res)
-	if e := (*cmdutil.Error)(nil); errors.As(err, &e) &&
-		// "not_found" covers servers from before this endpoint.
-		(e.Code == "visualizer.unsupported" || e.Code == "visualizer.not_found") {
+	if e := (*cmdutil.Error)(nil); errors.As(err, &e) && e.Code == "visualizer.unsupported" {
 		return "", false, nil
 	}
 	if err != nil {
@@ -176,7 +177,7 @@ func putImport(ctx context.Context, f *core.Factory, res *importUploadResponse, 
 	f.IO.StartProgress("Uploading…")
 	// The URL carries its own authorization: the Re:Earth token must not go
 	// to storage, so this uses the client without credentials.
-	resp, err := f.PublicHTTPClient().Do(req)
+	resp, err := streamClient(f.PublicHTTPClient()).Do(req)
 	f.IO.StopProgress()
 	if err != nil {
 		return err
@@ -290,6 +291,9 @@ func waitForImport(ctx context.Context, f *core.Factory, c *client, projectID st
 			continue
 		}
 		break
+	}
+	if errors.Is(ctx.Err(), context.Canceled) {
+		return nil, ctx.Err()
 	}
 	return nil, cmdutil.NewError(cmdutil.ExitError, "visualizer.import_timeout",
 		fmt.Sprintf("the import of project %s did not finish within %s", projectID, timeout),

@@ -109,7 +109,7 @@ func (c *client) download(ctx context.Context, path string, w io.Writer) (int64,
 	if err != nil {
 		return 0, err
 	}
-	resp, err := c.http.Do(req)
+	resp, err := streamClient(c.http).Do(req)
 	if err != nil {
 		return 0, err
 	}
@@ -118,6 +118,12 @@ func (c *client) download(ctx context.Context, path string, w io.Writer) (int64,
 		return 0, c.apiError(resp)
 	}
 	return io.Copy(w, resp.Body)
+}
+
+func streamClient(hc *http.Client) *http.Client {
+	cp := *hc
+	cp.Timeout = 0
+	return &cp
 }
 
 func (c *client) do(ctx context.Context, method, path string, query url.Values, body io.Reader, contentType string, out any) error {

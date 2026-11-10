@@ -352,7 +352,7 @@ func newCmdProjectEdit(f *core.Factory) *cobra.Command {
 	var starred, archived bool
 	cmd := &cobra.Command{
 		Use:   "edit [project-id]",
-		Short: "Change a project's name or description",
+		Short: "Change a project's name, description, starred or archived state",
 		Long: `Change a project's name, description, starred or archived state.
 Only the flags you pass are changed.`,
 		Example: `  $ reearth vis project edit 01hq... --name "City parks 2026"
@@ -415,7 +415,6 @@ unless --yes is passed.`,
 		Example: `  $ reearth vis project delete 01hq...
   $ reearth vis project delete 01hq... --yes
   $ reearth vis project delete 01hq... --permanent`,
-		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id := args[0]
 			prompt := fmt.Sprintf("Move project %s to the trash?", id)
@@ -463,7 +462,6 @@ with "project list --deleted". Restoring a project that is not in the trash
 changes nothing.`,
 		Example: `  $ reearth vis project list --deleted
   $ reearth vis project restore 01hq...`,
-		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id := args[0]
 			c, err := newClient(cmd.Context(), f)
@@ -520,7 +518,6 @@ func newCmdProjectUnpublish(f *core.Factory) *cobra.Command {
 publishing it again brings back the same URL. Asks for confirmation unless
 --yes is passed.`,
 		Example: `  $ reearth vis project unpublish 01hq...`,
-		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id := args[0]
 			if err := f.Confirm(fmt.Sprintf("Unpublish project %s? Its published URL stops working.", id)); err != nil {
@@ -623,6 +620,10 @@ take a while to build on the server.`,
 				return err
 			}
 			defer func() { _ = os.Remove(tmp.Name()) }()
+			if err := tmp.Chmod(0o644); err != nil {
+				_ = tmp.Close()
+				return err
+			}
 
 			f.IO.StartProgress("Exporting…")
 			n, err := c.download(cmd.Context(), path, tmp)
@@ -667,5 +668,5 @@ func humanBytes(n int64) string {
 		div *= unit
 		exp++
 	}
-	return fmt.Sprintf("%.1f %cB", float64(n)/float64(div), "KMGT"[exp])
+	return fmt.Sprintf("%.1f %cB", float64(n)/float64(div), "KMGTPE"[exp])
 }

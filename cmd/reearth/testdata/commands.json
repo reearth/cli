@@ -203,7 +203,7 @@
   {
     "path": "reearth visualizer project edit",
     "usage": "reearth visualizer project edit [project-id] [flags]",
-    "short": "Change a project's name or description",
+    "short": "Change a project's name, description, starred or archived state",
     "runnable": true,
     "flags": [
       {
@@ -604,7 +604,7 @@
         "name": "project",
         "shorthand": "p",
         "type": "string",
-        "usage": "Project ID (default: REEARTH_VISUALIZER_PROJECT, then .reearth.yaml)"
+        "usage": "Project ID"
       }
     ]
   },
