@@ -176,9 +176,9 @@ fields instead (-K, -T).`,
 					return nil
 				}
 				cs := f.IO.Color()
-				t := p.Table("KEY", "TYPE", "REQUIRED", "TITLE", "OPTIONS")
+				t := p.Table("KEY", "TYPE", "REQUIRED", "MULTIPLE", "TITLE", "OPTIONS")
 				for _, r := range rows {
-					t.Row(r.key, r.typ, r.required, output.Cell{Text: r.title, Style: cs.Dim}, r.options)
+					t.Row(r.key, r.typ, r.required, r.multiple, output.Cell{Text: r.title, Style: cs.Dim}, r.options)
 				}
 				return t.Render()
 			})
@@ -203,34 +203,25 @@ type jsonSchema struct {
 
 type schemaRow struct {
 	key, typ, title, options string
-	required                 bool
+	required, multiple       bool
 }
 
-// rows lists the fields by key, with the fields of a group under the
-// group's key, as group.field, or group[].field for a multiple group.
+// rows lists the fields by key, as the schema gives them, with the fields of
+// a group under the group's key, as group.field.
 func (s jsonSchema) rows(prefix string) []schemaRow {
 	var rows []schemaRow
 	for _, key := range slices.Sorted(maps.Keys(s.Properties)) {
 		fd := s.Properties[key]
-		typ := fd.FieldType
-		if typ == "" && fd.Items != nil {
-			typ = fd.Items.FieldType
-		}
-		if typ == "" {
-			typ = fd.Type
-		}
 		name := prefix + key
-		if fd.Multiple {
-			typ += "[]"
-		}
-		rows = append(rows, schemaRow{key: name, typ: typ, title: fd.Title,
-			options: strings.Join(fd.Options, ", "), required: fd.Required})
-		if strings.TrimSuffix(typ, "[]") != "group" {
+		rows = append(rows, schemaRow{key: name, typ: fd.FieldType, title: fd.Title,
+			options: strings.Join(fd.Options, ", "), required: fd.Required, multiple: fd.Multiple})
+		if fd.FieldType != "group" {
 			continue
 		}
+		// A multiple group gives its fields under items.
 		group := fd
-		if fd.Multiple && fd.Items != nil {
-			group, name = *fd.Items, name+"[]"
+		if fd.Items != nil && len(fd.Properties) == 0 {
+			group = *fd.Items
 		}
 		rows = append(rows, group.rows(name+".")...)
 	}

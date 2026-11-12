@@ -83,7 +83,7 @@ func TestAssetList(t *testing.T) {
 		t.Fatalf("no project: %+v", r)
 	}
 	r := runTTY(t, "cms", "asset", "list", "-p", "proj")
-	for _, want := range []string{"a1", "park map.geojson", "1.5 KB", "true"} {
+	for _, want := range []string{"a1", "https://files.example.com/assets/ab/c%20d/park%20map.geojson", "1.5 KB", "true"} {
 		if r.code != 0 || !strings.Contains(r.out, want) {
 			t.Fatalf("missing %q: %+v", want, r)
 		}
@@ -115,7 +115,7 @@ func TestModelSchema(t *testing.T) {
 	if r.code != 0 {
 		t.Fatalf("schema: %+v", r)
 	}
-	for _, want := range []string{"title", "text", "true", "Title", "draft, published", "tags", "text[]", "spots", "group[]", "spots[].name"} {
+	for _, want := range []string{"title", "text", "true", "Title", "draft, published", "tags", "spots", "group", "spots.name"} {
 		if !strings.Contains(r.out, want) {
 			t.Errorf("table missing %q:\n%s", want, r.out)
 		}

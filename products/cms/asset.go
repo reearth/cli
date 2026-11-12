@@ -6,11 +6,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"os"
-	"path"
 	"path/filepath"
-	"strings"
 
 	cmsapi "github.com/reearth/reearth-cms-api/go"
 	"github.com/reearth/reearth-cms-api/go/cmsoapi"
@@ -41,7 +38,7 @@ func newCmdAssetList(f *core.Factory, o *globalOptions) *cobra.Command {
 		Short: "List the assets of a project",
 		Example: `  $ reearth cms asset list -p my-project
   $ reearth cms asset list --keyword park --sort updatedAt --dir desc
-  $ reearth cms asset list --json=id,name,url`,
+  $ reearth cms asset list --json=id,url,totalSize`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := lf.check(); err != nil {
@@ -83,10 +80,10 @@ func newCmdAssetList(f *core.Factory, o *globalOptions) *cobra.Command {
 				}
 				cs := f.IO.Color()
 				// The API leaves the name, content type and update time out of
-				// the list, so the name comes from the URL.
-				t := p.Table("ID", "NAME", "SIZE", "PUBLIC", "CREATED")
+				// the list; asset get has the name and content type.
+				t := p.Table("ID", "URL", "SIZE", "PUBLIC", "CREATED")
 				for _, a := range assets {
-					t.Row(a.Id, assetName(deref(a.Name), a.Url), formatSize(deref(a.TotalSize)), a.Public,
+					t.Row(a.Id, a.Url, formatSize(deref(a.TotalSize)), a.Public,
 						output.Cell{Text: p.Time(a.CreatedAt), Style: cs.Dim})
 				}
 				if err := t.Render(); err != nil {
@@ -128,7 +125,7 @@ func printAsset(f *core.Factory, a *cmsapi.Asset) error {
 	return p.Print(a, func() error {
 		return detail(f, p,
 			[2]string{"id", a.ID},
-			[2]string{"name", assetName(a.Name, a.URL)},
+			[2]string{"name", a.Name},
 			[2]string{"url", a.URL},
 			[2]string{"content type", a.ContentType},
 			[2]string{"size", formatSize(float32(a.TotalSize))},
@@ -137,19 +134,6 @@ func printAsset(f *core.Factory, a *cmsapi.Asset) error {
 			[2]string{"updated", p.Time(a.UpdatedAt)},
 		)
 	})
-}
-
-// assetName is an asset's file name, or the last part of its URL when the
-// API leaves the name out.
-func assetName(name, rawURL string) string {
-	if name != "" || rawURL == "" {
-		return name
-	}
-	u, err := url.Parse(rawURL)
-	if err != nil || u.Path == "" || strings.HasSuffix(u.Path, "/") {
-		return ""
-	}
-	return path.Base(u.Path)
 }
 
 // formatSize shows a size in bytes in KB, MB or GB, or "" for 0.

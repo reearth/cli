@@ -153,7 +153,7 @@ func newItemTable(items []cmsapi.Item) itemTable {
 				seen[fd.Key] = true
 				t.keys = append(t.keys, fd.Key)
 			}
-			row[fd.Key] = fieldValue(fd)
+			row[fd.Key] = formatValue(fd.Value)
 		}
 		t.values = append(t.values, row)
 	}
@@ -181,66 +181,6 @@ func (t *itemTable) fit(width, fixed int) int {
 	return 0
 }
 
-// fieldValue is formatValue, with a date at midnight shown as the date only
-// and a GeoJSON geometry summarized.
-func fieldValue(fd *cmsapi.Field) string {
-	if g, ok := geometryOf(fd.Value); ok {
-		return g
-	}
-	s := formatValue(fd.Value)
-	if fd.Type == "date" {
-		if d, rest, ok := strings.Cut(s, "T00:00:00"); ok && (rest == "" || rest == "Z" || rest[0] == '+' || rest[0] == '-') {
-			return d
-		}
-	}
-	return s
-}
-
 func displayLen(s string) int { return runewidth.StringWidth(s) }
 
 func truncate(s string, n int) string { return runewidth.Truncate(s, n, "…") }
-
-// geometryOf summarizes a GeoJSON geometry, given as an object or as JSON
-// text: a point as "lon, lat", anything else as its type and point count.
-func geometryOf(v any) (string, bool) {
-	var g struct {
-		Type        string          `json:"type"`
-		Coordinates json.RawMessage `json:"coordinates"`
-	}
-	var b []byte
-	switch v := v.(type) {
-	case string:
-		b = []byte(v)
-	case map[string]any:
-		b, _ = json.Marshal(v)
-	default:
-		return "", false
-	}
-	if json.Unmarshal(b, &g) != nil || g.Type == "" || len(g.Coordinates) == 0 {
-		return "", false
-	}
-	if g.Type == "Point" {
-		var c []float64
-		if json.Unmarshal(g.Coordinates, &c) == nil && len(c) >= 2 {
-			return fmt.Sprintf("%g, %g", c[0], c[1]), true
-		}
-	}
-	return fmt.Sprintf("%s (%d points)", g.Type, countPoints(g.Coordinates)), true
-}
-
-// countPoints counts the positions in nested GeoJSON coordinates.
-func countPoints(raw json.RawMessage) int {
-	var nums []float64
-	if json.Unmarshal(raw, &nums) == nil {
-		return 1
-	}
-	var list []json.RawMessage
-	if json.Unmarshal(raw, &list) != nil {
-		return 0
-	}
-	n := 0
-	for _, e := range list {
-		n += countPoints(e)
-	}
-	return n
-}
