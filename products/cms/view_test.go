@@ -86,3 +86,21 @@ func TestFormatValueFitsOneLine(t *testing.T) {
 		}
 	}
 }
+
+func TestAssetNameAndSize(t *testing.T) {
+	for _, c := range []struct{ name, url, want string }{
+		{"given.png", "https://x/a/b.png", "given.png"},
+		{"", "https://x/assets/a%20b.geojson?sig=1", "a b.geojson"},
+		{"", "https://x/assets/", ""},
+		{"", "", ""},
+	} {
+		if got := assetName(c.name, c.url); got != c.want {
+			t.Errorf("assetName(%q, %q) = %q, want %q", c.name, c.url, got, c.want)
+		}
+	}
+	for n, want := range map[float32]string{0: "", 512: "512 B", 1536: "1.5 KB", 3 << 20: "3.0 MB", 5 << 30: "5.0 GB"} {
+		if got := formatSize(n); got != want {
+			t.Errorf("formatSize(%v) = %q, want %q", n, got, want)
+		}
+	}
+}

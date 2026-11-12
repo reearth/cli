@@ -6,26 +6,101 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
+	"path"
 	"path/filepath"
+	"strings"
 
 	cmsapi "github.com/reearth/reearth-cms-api/go"
+	"github.com/reearth/reearth-cms-api/go/cmsoapi"
 	"github.com/spf13/cobra"
 
 	"github.com/reearth/cli/sdk/cmdutil"
 	"github.com/reearth/cli/sdk/core"
+	"github.com/reearth/cli/sdk/output"
 )
 
 func newCmdAsset(f *core.Factory, o *globalOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "asset",
-		Short: "Show, upload and download assets",
-		Long: `Show, upload and download the assets of a project.
+		Short: "List, show, upload and download assets",
+		Long: `List, show, upload and download the assets of a project.
 
 An asset is a file stored by CMS, such as an image or a GeoJSON file, that
 items refer to by its ID. Its content is downloaded from the asset's URL.`,
 	}
-	cmd.AddCommand(newCmdAssetGet(f, o), newCmdAssetCreate(f, o), newCmdAssetCat(f, o), newCmdAssetCp(f, o))
+	cmd.AddCommand(newCmdAssetList(f, o), newCmdAssetGet(f, o), newCmdAssetCreate(f, o), newCmdAssetCat(f, o), newCmdAssetCp(f, o))
+	return cmd
+}
+
+func newCmdAssetList(f *core.Factory, o *globalOptions) *cobra.Command {
+	var lf listFlags
+	cmd := &cobra.Command{
+		Use:   "list",
+		Short: "List the assets of a project",
+		Long: `List the assets of a project. It calls the workspace-scoped API, so it
+needs a workspace (-w) as well as a project (-p).`,
+		Example: `  $ reearth cms asset list -w my-workspace -p my-project
+  $ reearth cms asset list --keyword park --sort updatedAt --dir desc
+  $ reearth cms asset list --json=id,name,url`,
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := lf.check(); err != nil {
+				return err
+			}
+			c, err := o.api(cmd.Context(), f, true)
+			if err != nil {
+				return err
+			}
+			f.IO.StartProgress("Fetching assets…")
+			res, err := c.AssetFilterWithResponse(cmd.Context(), c.ws, c.project, &cmsoapi.AssetFilterParams{
+				Page:    &lf.page,
+				PerPage: &lf.perPage,
+				Keyword: optional(lf.keyword),
+				Sort:    optional(cmsoapi.AssetFilterParamsSort(lf.sort)),
+				Dir:     optional(cmsoapi.AssetFilterParamsDir(lf.dir)),
+			})
+			f.IO.StopProgress()
+			what := "project " + c.project
+			if err != nil {
+				return apiError(err, what)
+			}
+			if err := checkStatus(res.StatusCode(), res.Body, what); err != nil {
+				return err
+			}
+			if res.JSON200 == nil {
+				return unexpectedResponse(what)
+			}
+			assets := deref(res.JSON200.Items)
+
+			p, err := f.Printer()
+			if err != nil {
+				return err
+			}
+			return p.Print(assets, func() error {
+				if len(assets) == 0 {
+					f.IO.Info("No assets found")
+					return nil
+				}
+				cs := f.IO.Color()
+				// The API leaves the name, content type and update time out of
+				// the list, so the name comes from the URL.
+				t := p.Table("ID", "NAME", "SIZE", "PUBLIC", "CREATED")
+				for _, a := range assets {
+					t.Row(a.Id, assetName(deref(a.Name), a.Url), formatSize(deref(a.TotalSize)), a.Public,
+						output.Cell{Text: p.Time(a.CreatedAt), Style: cs.Dim})
+				}
+				if err := t.Render(); err != nil {
+					return err
+				}
+				pageHint(f, p.IsHuman(), hasNext(res.JSON200.Page, res.JSON200.PerPage, res.JSON200.TotalCount),
+					lf.page, deref(res.JSON200.TotalCount), "assets")
+				return nil
+			})
+		},
+	}
+	lf.add(cmd)
 	return cmd
 }
 
@@ -55,13 +130,45 @@ func printAsset(f *core.Factory, a *cmsapi.Asset) error {
 	return p.Print(a, func() error {
 		return detail(f, p,
 			[2]string{"id", a.ID},
-			[2]string{"name", a.Name},
+			[2]string{"name", assetName(a.Name, a.URL)},
 			[2]string{"url", a.URL},
 			[2]string{"content type", a.ContentType},
+			[2]string{"size", formatSize(float32(a.TotalSize))},
 			[2]string{"project", a.ProjectID},
+			[2]string{"created", p.Time(a.CreatedAt)},
 			[2]string{"updated", p.Time(a.UpdatedAt)},
 		)
 	})
+}
+
+// assetName is an asset's file name, or the last part of its URL when the
+// API leaves the name out.
+func assetName(name, rawURL string) string {
+	if name != "" || rawURL == "" {
+		return name
+	}
+	u, err := url.Parse(rawURL)
+	if err != nil || u.Path == "" || strings.HasSuffix(u.Path, "/") {
+		return ""
+	}
+	return path.Base(u.Path)
+}
+
+// formatSize shows a size in bytes in KB, MB or GB, or "" for 0.
+func formatSize(n float32) string {
+	if n <= 0 {
+		return ""
+	}
+	const unit = 1024
+	if n < unit {
+		return fmt.Sprintf("%.0f B", n)
+	}
+	v, i := float64(n)/unit, 0
+	for v >= unit && i < 2 {
+		v /= unit
+		i++
+	}
+	return fmt.Sprintf("%.1f %cB", v, "KMG"[i])
 }
 
 func getAsset(ctx context.Context, f *core.Factory, o *globalOptions, id string) (*cmsapi.Asset, error) {

@@ -16,8 +16,10 @@ type Product struct{}
 
 var _ core.APIProduct = Product{}
 
-func (Product) Name() string  { return "cms" }
-func (Product) Short() string { return "Manage Re:Earth CMS models, items, assets and comments" }
+func (Product) Name() string { return "cms" }
+func (Product) Short() string {
+	return "Manage Re:Earth CMS projects, models, items, assets and comments"
+}
 
 func (Product) BaseURL(*auth.Env) string { return defaultBaseURL }
 
@@ -39,13 +41,17 @@ or set REEARTH_CMS_TOKEN. Most commands also need a project: pass -p, or set
 REEARTH_CMS_PROJECT or cms.project in .reearth.yaml. A model given by key
 needs the project too.
 
-Safe mode refuses item update and item delete. Turn it on with
+Some commands (project list, asset list, model schema, item publish, and
+item list's search and order flags) call the workspace-scoped API and need a
+workspace too: pass -w, or set REEARTH_CMS_WORKSPACE or cms.workspace.
+
+Safe mode refuses item update, item delete and item publish. Turn it on with
 REEARTH_CMS_SAFE_MODE=true or "cms: {safe_mode: true}" in .reearth.yaml, for
 example in a directory where agents work.`,
 	}
 	fl := cmd.PersistentFlags()
 	fl.StringVarP(&o.project, "project", "p", "", "Project ID or alias (default: REEARTH_CMS_PROJECT, then .reearth.yaml)")
-	fl.StringVarP(&o.workspace, "workspace", "w", "", "Workspace ID (default: REEARTH_CMS_WORKSPACE, then .reearth.yaml)")
-	cmd.AddCommand(newCmdModel(f, o), newCmdItem(f, o), newCmdAsset(f, o), newCmdComment(f, o))
+	fl.StringVarP(&o.workspace, "workspace", "w", "", "Workspace ID or alias (default: REEARTH_CMS_WORKSPACE, then .reearth.yaml)")
+	cmd.AddCommand(newCmdProject(f, o), newCmdModel(f, o), newCmdItem(f, o), newCmdAsset(f, o), newCmdComment(f, o))
 	return cmd
 }

@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"net/http"
 	"regexp"
+	"strconv"
 	"strings"
 
 	cmsapi "github.com/reearth/reearth-cms-api/go"
+	"github.com/reearth/reearth-cms-api/go/cmsoapi"
 
 	"github.com/reearth/cli/sdk/cmdutil"
 	"github.com/reearth/cli/sdk/core"
@@ -37,6 +39,14 @@ func (o *globalOptions) requireProject(f *core.Factory) (string, error) {
 // .reearth.yaml, or "" when none is set.
 func (o *globalOptions) workspaceOr(f *core.Factory) string {
 	return f.ProjectValue(Product{}, "workspace", o.workspace)
+}
+
+// requireWorkspace is workspaceOr for commands that cannot run without one.
+func (o *globalOptions) requireWorkspace(f *core.Factory) (string, error) {
+	if ws := o.workspaceOr(f); ws != "" {
+		return ws, nil
+	}
+	return "", cmdutil.NoInputError("a workspace", "-w or set REEARTH_CMS_WORKSPACE")
 }
 
 // checkItemModel requires the model of an item given by ID when a workspace
@@ -77,6 +87,67 @@ func (o *globalOptions) client(ctx context.Context, f *core.Factory) (*cmsapi.CM
 	return c, nil
 }
 
+// api is the client generated from the integration API's OpenAPI document,
+// with the workspace and, when the command needs it, the project to call it
+// with. Commands the hand-written SDK client does not cover use it.
+type api struct {
+	*cmsoapi.ClientWithResponses
+	ws, project string
+}
+
+// api returns the generated client. It calls the workspace-scoped API, so it
+// needs a workspace, and a project when withProject is set.
+func (o *globalOptions) api(ctx context.Context, f *core.Factory, withProject bool) (*api, error) {
+	ws, err := o.requireWorkspace(f)
+	if err != nil {
+		return nil, err
+	}
+	var project string
+	if withProject {
+		if project, err = o.requireProject(f); err != nil {
+			return nil, err
+		}
+	}
+	hc, err := f.HTTPClient(ctx, Product{})
+	if err != nil {
+		return nil, err
+	}
+	base, err := f.BaseURL(Product{})
+	if err != nil {
+		return nil, err
+	}
+	// The document's paths start at the workspace; the API serves them
+	// under /api, as the hand-written client does.
+	c, err := cmsoapi.NewClientWithResponses(strings.TrimRight(base, "/")+"/api", cmsoapi.WithHTTPClient(hc))
+	if err != nil {
+		return nil, err
+	}
+	return &api{ClientWithResponses: c, ws: ws, project: project}, nil
+}
+
+// checkStatus turns a failed response of the generated client into the
+// CLI's errors, by its status code and body.
+func checkStatus(code int, body []byte, what string) error {
+	if code >= 200 && code < 300 {
+		return nil
+	}
+	msg := strings.Join(strings.Fields(string(body)), " ")
+	if len(msg) > 200 {
+		msg = msg[:200] + "…"
+	}
+	if msg == "" {
+		msg = http.StatusText(code)
+	}
+	return statusError(code, fmt.Errorf("code=%d, %s", code, msg), what)
+}
+
+// unexpectedResponse reports a successful response the generated client
+// could not read.
+func unexpectedResponse(what string) error {
+	return cmdutil.NewError(cmdutil.ExitError, "cms.unexpected_response",
+		fmt.Sprintf("%s: the CMS API returned a response that is not the expected JSON", what), "")
+}
+
 // storageClient is for asset files on storage hosts: signed upload URLs and
 // asset URLs. It carries no credentials, so the CMS token never leaves the
 // API, and no overall timeout, so large files are not cut off.
@@ -93,18 +164,26 @@ var reStatus = regexp.MustCompile(`code=(\d{3})`)
 // apiError gives SDK errors the CLI's error codes and exit codes.
 func apiError(err error, what string) error {
 	if errors.Is(err, cmsapi.ErrNotFound) {
-		return cmdutil.NotFoundf("%s not found", what)
+		return statusError(http.StatusNotFound, err, what)
 	}
-	var status string
+	var code int
 	if m := reStatus.FindStringSubmatch(err.Error()); m != nil {
-		status = m[1]
+		code, _ = strconv.Atoi(m[1])
 	}
-	switch status {
-	case "401", "403":
+	return statusError(code, err, what)
+}
+
+// statusError gives a failed request, by its HTTP status (0 when there was
+// none), the CLI's error codes and exit codes.
+func statusError(code int, err error, what string) error {
+	switch code {
+	case http.StatusNotFound:
+		return cmdutil.NotFoundf("%s not found", what)
+	case http.StatusUnauthorized, http.StatusForbidden:
 		return &cmdutil.Error{Exit: cmdutil.ExitAuth, Code: "auth.rejected", Err: err,
 			Message: fmt.Sprintf("the CMS API rejected the token for %s", what),
 			Hint:    "check the integration token: `reearth login --with-token --product cms` or REEARTH_CMS_TOKEN"}
-	case "400", "422":
+	case http.StatusBadRequest, http.StatusUnprocessableEntity:
 		return &cmdutil.Error{Exit: cmdutil.ExitUsage, Code: "cms.invalid_input", Err: err,
 			Message: fmt.Sprintf("the CMS API refused the request for %s: %v", what, err),
 			Hint:    "check the field keys, types and values against the model's schema"}

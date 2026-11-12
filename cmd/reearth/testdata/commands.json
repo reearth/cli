@@ -301,7 +301,7 @@
   {
     "path": "reearth cms",
     "usage": "reearth cms [flags]",
-    "short": "Manage Re:Earth CMS models, items, assets and comments",
+    "short": "Manage Re:Earth CMS projects, models, items, assets and comments",
     "runnable": false,
     "flags": [
       {
@@ -314,14 +314,55 @@
         "name": "workspace",
         "shorthand": "w",
         "type": "string",
-        "usage": "Workspace ID (default: REEARTH_CMS_WORKSPACE, then .reearth.yaml)"
+        "usage": "Workspace ID or alias (default: REEARTH_CMS_WORKSPACE, then .reearth.yaml)"
+      }
+    ]
+  },
+  {
+    "path": "reearth cms project",
+    "usage": "reearth cms project [flags]",
+    "short": "List projects",
+    "runnable": false
+  },
+  {
+    "path": "reearth cms project list",
+    "usage": "reearth cms project list [flags]",
+    "short": "List the projects of a workspace",
+    "runnable": true,
+    "flags": [
+      {
+        "name": "dir",
+        "type": "string",
+        "usage": "Sort direction with --sort: asc or desc"
+      },
+      {
+        "name": "keyword",
+        "type": "string",
+        "usage": "Only show results that match a keyword"
+      },
+      {
+        "name": "page",
+        "type": "int",
+        "default": "1",
+        "usage": "Page number"
+      },
+      {
+        "name": "per-page",
+        "type": "int",
+        "default": "50",
+        "usage": "Results per page"
+      },
+      {
+        "name": "sort",
+        "type": "string",
+        "usage": "Sort by createdAt or updatedAt"
       }
     ]
   },
   {
     "path": "reearth cms model",
     "usage": "reearth cms model [flags]",
-    "short": "List and show models",
+    "short": "List and show models, and show their fields",
     "runnable": false
   },
   {
@@ -351,9 +392,22 @@
     "runnable": true
   },
   {
+    "path": "reearth cms model schema",
+    "usage": "reearth cms model schema \u003cmodel-id-or-key\u003e [flags]",
+    "short": "Show the fields of a model as a JSON Schema",
+    "runnable": true,
+    "flags": [
+      {
+        "name": "metadata",
+        "type": "bool",
+        "usage": "Show the metadata fields"
+      }
+    ]
+  },
+  {
     "path": "reearth cms item",
     "usage": "reearth cms item [flags]",
-    "short": "List, show, create, update and delete items",
+    "short": "List, show, create, update, delete and publish items",
     "runnable": false
   },
   {
@@ -364,8 +418,18 @@
     "flags": [
       {
         "name": "asset",
-        "type": "bool",
-        "usage": "Include the data of referenced assets"
+        "type": "string",
+        "usage": "Include the data of referenced assets: true, or all for their files too"
+      },
+      {
+        "name": "dir",
+        "type": "string",
+        "usage": "Sort direction with --sort: asc or desc"
+      },
+      {
+        "name": "keyword",
+        "type": "string",
+        "usage": "Only show results that match a keyword"
       },
       {
         "name": "model",
@@ -384,6 +448,16 @@
         "type": "int",
         "default": "50",
         "usage": "Results per page"
+      },
+      {
+        "name": "ref",
+        "type": "string",
+        "usage": "Which version of the items: latest or public"
+      },
+      {
+        "name": "sort",
+        "type": "string",
+        "usage": "Sort by createdAt or updatedAt"
       }
     ]
   },
@@ -536,10 +610,59 @@
     ]
   },
   {
+    "path": "reearth cms item publish",
+    "usage": "reearth cms item publish \u003citem-id\u003e [flags]",
+    "short": "Publish an item",
+    "runnable": true,
+    "flags": [
+      {
+        "name": "model",
+        "shorthand": "m",
+        "type": "string",
+        "usage": "The item's model ID or key (required)"
+      }
+    ]
+  },
+  {
     "path": "reearth cms asset",
     "usage": "reearth cms asset [flags]",
-    "short": "Show, upload and download assets",
+    "short": "List, show, upload and download assets",
     "runnable": false
+  },
+  {
+    "path": "reearth cms asset list",
+    "usage": "reearth cms asset list [flags]",
+    "short": "List the assets of a project",
+    "runnable": true,
+    "flags": [
+      {
+        "name": "dir",
+        "type": "string",
+        "usage": "Sort direction with --sort: asc or desc"
+      },
+      {
+        "name": "keyword",
+        "type": "string",
+        "usage": "Only show results that match a keyword"
+      },
+      {
+        "name": "page",
+        "type": "int",
+        "default": "1",
+        "usage": "Page number"
+      },
+      {
+        "name": "per-page",
+        "type": "int",
+        "default": "50",
+        "usage": "Results per page"
+      },
+      {
+        "name": "sort",
+        "type": "string",
+        "usage": "Sort by createdAt or updatedAt"
+      }
+    ]
   },
   {
     "path": "reearth cms asset get",
