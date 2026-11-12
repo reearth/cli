@@ -21,47 +21,36 @@ type globalOptions struct {
 	project, workspace string
 }
 
-// projectOr returns the project from -p, REEARTH_CMS_PROJECT or
-// .reearth.yaml, or "" when none is set.
-func (o *globalOptions) projectOr(f *core.Factory) string {
-	return f.ProjectValue(Product{}, "project", o.project)
-}
-
-// requireProject is projectOr for commands that cannot run without one.
+// requireProject returns the project from -p, REEARTH_CMS_PROJECT or
+// .reearth.yaml.
 func (o *globalOptions) requireProject(f *core.Factory) (string, error) {
-	if p := o.projectOr(f); p != "" {
+	if p := f.ProjectValue(Product{}, "project", o.project); p != "" {
 		return p, nil
 	}
 	return "", cmdutil.NoInputError("a project", "-p or set REEARTH_CMS_PROJECT")
 }
 
-// workspaceOr returns the workspace from -w, REEARTH_CMS_WORKSPACE or
-// .reearth.yaml, or "" when none is set.
-func (o *globalOptions) workspaceOr(f *core.Factory) string {
-	return f.ProjectValue(Product{}, "workspace", o.workspace)
-}
-
-// requireWorkspace is workspaceOr for commands that cannot run without one.
+// requireWorkspace returns the workspace from -w, REEARTH_CMS_WORKSPACE or
+// .reearth.yaml.
 func (o *globalOptions) requireWorkspace(f *core.Factory) (string, error) {
-	if ws := o.workspaceOr(f); ws != "" {
+	if ws := f.ProjectValue(Product{}, "workspace", o.workspace); ws != "" {
 		return ws, nil
 	}
 	return "", cmdutil.NoInputError("a workspace", "-w or set REEARTH_CMS_WORKSPACE")
-}
-
-// checkItemModel requires the model of an item given by ID when a workspace
-// is set: the workspace-scoped API reaches items only through their model.
-func (o *globalOptions) checkItemModel(f *core.Factory, model string) error {
-	if model == "" && o.workspaceOr(f) != "" {
-		return cmdutil.FlagErrorf("-m is required with a workspace: the item's model ID or key")
-	}
-	return nil
 }
 
 // client returns a CMS SDK client that calls the API through the
 // authenticated HTTP client. The SDK is given no token: it sets an empty
 // bearer header, which the authenticated client replaces.
 func (o *globalOptions) client(ctx context.Context, f *core.Factory) (*cmsapi.CMS, error) {
+	ws, err := o.requireWorkspace(f)
+	if err != nil {
+		return nil, err
+	}
+	project, err := o.requireProject(f)
+	if err != nil {
+		return nil, err
+	}
 	hc, err := f.HTTPClient(ctx, Product{})
 	if err != nil {
 		return nil, err
@@ -74,17 +63,9 @@ func (o *globalOptions) client(ctx context.Context, f *core.Factory) (*cmsapi.CM
 	if err != nil {
 		return nil, err
 	}
-	c = c.WithHTTPClient(hc)
-	// With a workspace, the SDK calls the workspace-scoped API, whose paths
-	// name the project even for an item or asset given by ID.
-	if ws := o.workspaceOr(f); ws != "" {
-		project, err := o.requireProject(f)
-		if err != nil {
-			return nil, err
-		}
-		c = c.WithWorkspace(ws).WithProject(project)
-	}
-	return c, nil
+	// The API serves workspace-scoped paths only: the SDK takes them when
+	// given the workspace, and needs the project for an item or asset by ID.
+	return c.WithHTTPClient(hc).WithWorkspace(ws).WithProject(project), nil
 }
 
 // api is the client generated from the integration API's OpenAPI document,

@@ -388,7 +388,7 @@
   {
     "path": "reearth cms model get",
     "usage": "reearth cms model get \u003cmodel-id-or-key\u003e [flags]",
-    "short": "Show a model by ID, or by key within a project",
+    "short": "Show a model by ID or key",
     "runnable": true
   },
   {
@@ -435,7 +435,7 @@
         "name": "model",
         "shorthand": "m",
         "type": "string",
-        "usage": "Model ID, or key with -p (required)"
+        "usage": "Model ID or key (required)"
       },
       {
         "name": "page",
@@ -471,7 +471,7 @@
         "name": "model",
         "shorthand": "m",
         "type": "string",
-        "usage": "The item's model ID, or key with -p (required with a workspace)"
+        "usage": "Model ID or key (required)"
       }
     ]
   },
@@ -519,7 +519,7 @@
         "name": "model",
         "shorthand": "m",
         "type": "string",
-        "usage": "Model ID, or key with -p (required)"
+        "usage": "Model ID or key (required)"
       },
       {
         "name": "type",
@@ -579,7 +579,7 @@
         "name": "model",
         "shorthand": "m",
         "type": "string",
-        "usage": "The item's model ID, or key with -p (required with a workspace)"
+        "usage": "Model ID or key (required)"
       },
       {
         "name": "type",
@@ -605,7 +605,7 @@
         "name": "model",
         "shorthand": "m",
         "type": "string",
-        "usage": "The item's model ID, or key with -p (required with a workspace)"
+        "usage": "Model ID or key (required)"
       }
     ]
   },
@@ -619,7 +619,7 @@
         "name": "model",
         "shorthand": "m",
         "type": "string",
-        "usage": "The item's model ID or key (required)"
+        "usage": "Model ID or key (required)"
       }
     ]
   },
@@ -729,7 +729,7 @@
         "name": "model",
         "shorthand": "m",
         "type": "string",
-        "usage": "The item's model ID, or key with -p (required with a workspace)"
+        "usage": "Model ID or key (required)"
       }
     ]
   },

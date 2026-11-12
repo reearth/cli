@@ -37,13 +37,10 @@ Items and assets take comments. For the field types and what they hold,
 search the documentation: ` + "`reearth docs search \"CMS フィールド\"`" + `.
 
 Commands need an integration token: run ` + "`reearth login --with-token --product cms`" + `
-or set REEARTH_CMS_TOKEN. Most commands also need a project: pass -p, or set
-REEARTH_CMS_PROJECT or cms.project in .reearth.yaml. A model given by key
-needs the project too.
-
-Some commands (project list, asset list, model schema, item publish, and
-item list's search and order flags) call the workspace-scoped API and need a
-workspace too: pass -w, or set REEARTH_CMS_WORKSPACE or cms.workspace.
+or set REEARTH_CMS_TOKEN. Every command needs a workspace (an ID or its
+alias), and all but project list a project: pass -w and -p, or set
+REEARTH_CMS_WORKSPACE and REEARTH_CMS_PROJECT, or cms.workspace and
+cms.project in .reearth.yaml.
 
 Safe mode refuses item update, item delete and item publish. Turn it on with
 REEARTH_CMS_SAFE_MODE=true or "cms: {safe_mode: true}" in .reearth.yaml, for

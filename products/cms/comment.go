@@ -25,21 +25,20 @@ func newCmdComment(f *core.Factory, o *globalOptions) *cobra.Command {
 }
 
 // newCmdCommentOn makes the command that comments on an item or an asset.
-// An item also takes its model (-m), which a workspace requires.
+// An item also takes its model (-m), as the API reaches it through the model.
 func newCmdCommentOn(f *core.Factory, o *globalOptions, target string, send func(ctx context.Context, c *cmsapi.CMS, model, id, content string) error) *cobra.Command {
 	var content, model string
+	example := "  $ reearth cms comment " + target + " 01j... "
+	if target == "item" {
+		example += "-m parks "
+	}
 	cmd := &cobra.Command{
 		Use:     target + " <" + target + "-id>",
 		Short:   "Add a comment to an " + target,
-		Example: "  $ reearth cms comment " + target + ` 01j... -c "Checked"`,
+		Example: example + `-c "Checked"`,
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id := args[0]
-			if target == "item" {
-				if err := o.checkItemModel(f, model); err != nil {
-					return err
-				}
-			}
 			c, err := o.client(cmd.Context(), f)
 			if err != nil {
 				return err
@@ -67,7 +66,7 @@ func newCmdCommentOn(f *core.Factory, o *globalOptions, target string, send func
 	cmd.Flags().StringVarP(&content, "content", "c", "", "Comment text (required)")
 	_ = cmd.MarkFlagRequired("content")
 	if target == "item" {
-		addItemModelFlag(cmd, &model)
+		addModelFlag(cmd, &model)
 	}
 	return cmd
 }

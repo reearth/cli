@@ -10,9 +10,6 @@ import (
 	"github.com/reearth/cli/sdk/envvar"
 )
 
-// The commands on the generated client call the workspace-scoped API.
-var workspaceEnv = envvar.Map{"REEARTH_CMS_WORKSPACE": "ws1", "REEARTH_CMS_PROJECT": "proj"}
-
 func query(t *testing.T, r request) url.Values {
 	t.Helper()
 	q, err := url.ParseQuery(r.Query)
@@ -29,7 +26,8 @@ func TestProjectList(t *testing.T) {
 			"page":     1, "perPage": 1, "totalCount": 2,
 		}),
 	})
-	setup(t, api, nil)
+	// A project is not needed to list them.
+	setup(t, api, envvar.Map{"REEARTH_CMS_WORKSPACE": "", "REEARTH_CMS_PROJECT": ""})
 
 	if r := run(t, "cms", "project", "list"); r.code != cmdutil.ExitUsage || !strings.Contains(r.errOut, "workspace") {
 		t.Fatalf("no workspace: %+v", r)
@@ -52,7 +50,7 @@ func TestProjectList(t *testing.T) {
 
 func TestListFlagsAreChecked(t *testing.T) {
 	api := newFakeServer(t, nil)
-	setup(t, api, workspaceEnv)
+	setup(t, api, nil)
 	for _, args := range [][]string{
 		{"project", "list", "--per-page", "101"},
 		{"project", "list", "--sort", "name"},
@@ -79,7 +77,7 @@ func TestAssetList(t *testing.T) {
 			"page": 1, "perPage": 50, "totalCount": 1,
 		}),
 	})
-	setup(t, api, envvar.Map{"REEARTH_CMS_WORKSPACE": "ws1"})
+	setup(t, api, envvar.Map{"REEARTH_CMS_PROJECT": ""})
 
 	if r := run(t, "cms", "asset", "list"); r.code != cmdutil.ExitUsage || !strings.Contains(r.errOut, "project") {
 		t.Fatalf("no project: %+v", r)
@@ -111,7 +109,7 @@ func TestModelSchema(t *testing.T) {
 		"GET /api/ws1/projects/proj/models/parks/schema.json":          reply(schemaDoc),
 		"GET /api/ws1/projects/proj/models/parks/metadata_schema.json": reply(map[string]any{"type": "object"}),
 	})
-	setup(t, api, workspaceEnv)
+	setup(t, api, nil)
 
 	r := runTTY(t, "cms", "model", "schema", "parks")
 	if r.code != 0 {
@@ -131,7 +129,7 @@ func TestModelSchema(t *testing.T) {
 	}
 }
 
-func TestItemListOnTheWorkspaceAPI(t *testing.T) {
+func TestItemListSearchAndOrder(t *testing.T) {
 	api := newFakeServer(t, map[string]http.HandlerFunc{
 		"GET /api/ws1/projects/proj/models/parks/items": reply(map[string]any{
 			"items": []any{item}, "page": 1, "perPage": 50, "totalCount": 1,
@@ -139,14 +137,7 @@ func TestItemListOnTheWorkspaceAPI(t *testing.T) {
 	})
 	setup(t, api, nil)
 
-	// Search and order need the workspace-scoped API.
-	for _, args := range [][]string{{"--keyword", "x"}, {"--sort", "createdAt"}, {"--ref", "public"}, {"--asset=all"}} {
-		if r := run(t, append([]string{"cms", "item", "list", "-m", "parks", "-p", "proj"}, args...)...); r.code != cmdutil.ExitUsage {
-			t.Errorf("%v without a workspace: %+v", args, r)
-		}
-	}
-
-	r := run(t, "cms", "item", "list", "-m", "parks", "-w", "ws1", "-p", "proj",
+	r := run(t, "cms", "item", "list", "-m", "parks",
 		"--keyword", "tokyo", "--sort", "updatedAt", "--dir", "asc", "--ref", "public", "--asset=all")
 	if r.code != 0 || !strings.Contains(r.out, "Hello") {
 		t.Fatalf("list: %+v", r)
@@ -158,7 +149,7 @@ func TestItemListOnTheWorkspaceAPI(t *testing.T) {
 		}
 	}
 	// --asset alone still means true.
-	if r := run(t, "cms", "item", "list", "-m", "parks", "-w", "ws1", "-p", "proj", "--asset"); r.code != 0 {
+	if r := run(t, "cms", "item", "list", "-m", "parks", "--asset"); r.code != 0 {
 		t.Fatalf("--asset: %+v", r)
 	}
 	if got := query(t, api.requests()[1]).Get("asset"); got != "true" {
@@ -171,7 +162,7 @@ func TestItemPublish(t *testing.T) {
 		"POST /api/ws1/projects/proj/models/parks/items/it1/publish":  reply(item),
 		"POST /api/ws1/projects/proj/models/parks/items/gone/publish": status(http.StatusNotFound),
 	})
-	setup(t, api, workspaceEnv)
+	setup(t, api, nil)
 
 	if r := run(t, "cms", "item", "publish", "it1", "--yes"); r.code == 0 || !strings.Contains(r.errOut, `"model"`) {
 		t.Fatalf("no model: %+v", r)
@@ -189,7 +180,7 @@ func TestItemPublish(t *testing.T) {
 		t.Fatalf("made %d requests, want 2", n)
 	}
 
-	setup(t, api, envvar.Map{"REEARTH_CMS_WORKSPACE": "ws1", "REEARTH_CMS_PROJECT": "proj", "REEARTH_CMS_SAFE_MODE": "true"})
+	setup(t, api, envvar.Map{"REEARTH_CMS_SAFE_MODE": "true"})
 	if r := run(t, "cms", "item", "publish", "it1", "-m", "parks", "--yes"); r.code == 0 || !strings.Contains(r.errOut, "safe mode") {
 		t.Fatalf("safe mode: %+v", r)
 	}
@@ -204,7 +195,7 @@ func TestWorkspaceAPIErrors(t *testing.T) {
 			http.Error(w, `{"error":"bad perPage"}`, http.StatusBadRequest)
 		},
 	})
-	setup(t, api, workspaceEnv)
+	setup(t, api, nil)
 	if r := run(t, "cms", "project", "list"); r.code != cmdutil.ExitAuth {
 		t.Errorf("401: %+v", r)
 	}

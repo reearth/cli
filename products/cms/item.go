@@ -20,9 +20,8 @@ func newCmdItem(f *core.Factory, o *globalOptions) *cobra.Command {
 		Short: "List, show, create, update, delete and publish items",
 		Long: `List, show, create, update, delete and publish the items of a model.
 
-A model is given by ID, or by key together with a project (-p). get, update
-and delete take the item's model with -m; it is required with a workspace
-(-w), whose API reaches items only through their model. Field values
+A model is given by its ID or key with -m; commands on one item need it too,
+as the API reaches an item through its model. Field values
 are given as -k <key> -t <type> -v <value>, repeated once per field, and
 metadata fields as -K, -T and -V. Values are sent as strings. For the
 field types and the values they take, see ` + "`reearth docs search \"CMS フィールド\"`" + `.
@@ -43,14 +42,10 @@ func newCmdItemList(f *core.Factory, o *globalOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List the items of a model",
-		Long: `List the items of a model.
-
---keyword, --sort, --dir, --ref and --asset=all need a workspace (-w), as
-only the workspace-scoped API takes them.`,
 		Example: `  $ reearth cms item list -m 01j...
   $ reearth cms item list -m parks -p my-project --page 2
-  $ reearth cms item list -m parks -w my-workspace --keyword tokyo --sort updatedAt --dir desc
-  $ reearth cms item list -m parks -w my-workspace --ref public
+  $ reearth cms item list -m parks --keyword tokyo --sort updatedAt --dir desc
+  $ reearth cms item list -m parks --ref public
   $ reearth cms item list -m parks --asset --json=id,fields`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -63,16 +58,7 @@ only the workspace-scoped API takes them.`,
 			if err := checkEnum("--asset", asset, "true", "false", "all"); err != nil {
 				return err
 			}
-			var res *cmsapi.Items
-			var err error
-			if o.workspaceOr(f) != "" {
-				res, err = listItems(cmd.Context(), f, o, model, ref, asset, lf)
-			} else {
-				if lf.keyword != "" || lf.sort != "" || ref != "" || asset == "all" {
-					return cmdutil.FlagErrorf("--keyword, --sort, --dir, --ref and --asset=all need a workspace (-w)")
-				}
-				res, err = listItemsLegacy(cmd.Context(), f, o, model, asset == "true", lf)
-			}
+			res, err := listItems(cmd.Context(), f, o, model, ref, asset, lf)
 			if err != nil {
 				return err
 			}
@@ -118,8 +104,7 @@ only the workspace-scoped API takes them.`,
 			})
 		},
 	}
-	cmd.Flags().StringVarP(&model, "model", "m", "", "Model ID, or key with -p (required)")
-	_ = cmd.MarkFlagRequired("model")
+	addModelFlag(cmd, &model)
 	lf.add(cmd)
 	cmd.Flags().StringVar(&ref, "ref", "", "Which version of the items: latest or public")
 	cmd.Flags().StringVar(&asset, "asset", "", "Include the data of referenced assets: true, or all for their files too")
@@ -127,7 +112,8 @@ only the workspace-scoped API takes them.`,
 	return cmd
 }
 
-// listItems lists items through the workspace-scoped API.
+// listItems lists items through the generated client, which takes every
+// search and order parameter.
 func listItems(ctx context.Context, f *core.Factory, o *globalOptions, model, ref, asset string, lf listFlags) (*cmsapi.Items, error) {
 	c, err := o.api(ctx, f, true)
 	if err != nil {
@@ -159,38 +145,15 @@ func listItems(ctx context.Context, f *core.Factory, o *globalOptions, model, re
 	return &items, nil
 }
 
-// listItemsLegacy lists items through the API without a workspace.
-func listItemsLegacy(ctx context.Context, f *core.Factory, o *globalOptions, model string, asset bool, lf listFlags) (*cmsapi.Items, error) {
-	c, err := o.client(ctx, f)
-	if err != nil {
-		return nil, err
-	}
-	f.IO.StartProgress("Fetching items…")
-	var res *cmsapi.Items
-	if project := o.projectOr(f); project != "" {
-		res, err = c.GetItemsPartiallyByKey(ctx, project, model, lf.page, lf.perPage, asset)
-	} else {
-		res, err = c.GetItemsPartially(ctx, model, lf.page, lf.perPage, asset)
-	}
-	f.IO.StopProgress()
-	if err != nil {
-		return nil, apiError(err, "model "+model)
-	}
-	return res, nil
-}
-
 func newCmdItemGet(f *core.Factory, o *globalOptions) *cobra.Command {
 	var model string
 	cmd := &cobra.Command{
 		Use:   "get <item-id>",
 		Short: "Show an item, with the data of its assets",
-		Example: `  $ reearth cms item get 01j...
-  $ reearth cms item get 01j... -m parks -w my-workspace -p my-project`,
+		Example: `  $ reearth cms item get 01j... -m parks
+  $ reearth cms item get 01j... -m parks -p my-project`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := o.checkItemModel(f, model); err != nil {
-				return err
-			}
 			c, err := o.client(cmd.Context(), f)
 			if err != nil {
 				return err
@@ -204,13 +167,14 @@ func newCmdItemGet(f *core.Factory, o *globalOptions) *cobra.Command {
 			return printItem(f, it)
 		},
 	}
-	addItemModelFlag(cmd, &model)
+	addModelFlag(cmd, &model)
 	return cmd
 }
 
-// addItemModelFlag adds -m to a command that takes an item by ID.
-func addItemModelFlag(cmd *cobra.Command, model *string) {
-	cmd.Flags().StringVarP(model, "model", "m", "", "The item's model ID, or key with -p (required with a workspace)")
+// addModelFlag adds the required -m: the model, or the model of the item.
+func addModelFlag(cmd *cobra.Command, model *string) {
+	cmd.Flags().StringVarP(model, "model", "m", "", "Model ID or key (required)")
+	_ = cmd.MarkFlagRequired("model")
 }
 
 // fieldFlags are the -k/-t/-v and -K/-T/-V flags of create and update.
@@ -267,7 +231,7 @@ func newCmdItemCreate(f *core.Factory, o *globalOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "create",
 		Short: "Create an item",
-		Example: `  $ reearth cms item create -m 01j... -k title -t text -v "Hello"
+		Example: `  $ reearth cms item create -m parks -k title -t text -v "Hello"
   $ reearth cms item create -m parks -p my-project -k title -t text -v "Hello" -k count -t number -v 10
   $ reearth cms item create -m parks -k title -t text -v "Hello" -K status -T select -V published`,
 		Args: cobra.NoArgs,
@@ -281,12 +245,7 @@ func newCmdItemCreate(f *core.Factory, o *globalOptions) *cobra.Command {
 				return err
 			}
 			f.IO.StartProgress("Creating the item…")
-			var it *cmsapi.Item
-			if project := o.projectOr(f); project != "" {
-				it, err = c.CreateItemByKey(cmd.Context(), project, model, fields, meta)
-			} else {
-				it, err = c.CreateItem(cmd.Context(), model, fields, meta)
-			}
+			it, err := c.CreateItem(cmd.Context(), model, fields, meta)
 			f.IO.StopProgress()
 			if err != nil {
 				return apiError(err, "model "+model)
@@ -295,8 +254,7 @@ func newCmdItemCreate(f *core.Factory, o *globalOptions) *cobra.Command {
 			return printItem(f, it)
 		},
 	}
-	cmd.Flags().StringVarP(&model, "model", "m", "", "Model ID, or key with -p (required)")
-	_ = cmd.MarkFlagRequired("model")
+	addModelFlag(cmd, &model)
 	ff.add(cmd)
 	return cmd
 }
@@ -309,15 +267,12 @@ func newCmdItemUpdate(f *core.Factory, o *globalOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "update <item-id>",
 		Short: "Update the given fields of an item",
-		Example: `  $ reearth cms item update 01j... -k title -t text -v "Updated"
-  $ reearth cms item update 01j... -K status -T select -V draft --yes`,
+		Example: `  $ reearth cms item update 01j... -m parks -k title -t text -v "Updated"
+  $ reearth cms item update 01j... -m parks -K status -T select -V draft --yes`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id := args[0]
 			if err := checkSafeMode(f, "item update"); err != nil {
-				return err
-			}
-			if err := o.checkItemModel(f, model); err != nil {
 				return err
 			}
 			fields, meta, err := ff.parse()
@@ -341,7 +296,7 @@ func newCmdItemUpdate(f *core.Factory, o *globalOptions) *cobra.Command {
 			return printItem(f, it)
 		},
 	}
-	addItemModelFlag(cmd, &model)
+	addModelFlag(cmd, &model)
 	ff.add(cmd)
 	return cmd
 }
@@ -351,14 +306,11 @@ func newCmdItemDelete(f *core.Factory, o *globalOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "delete <item-id>",
 		Short:   "Delete an item",
-		Example: `  $ reearth cms item delete 01j... --yes`,
+		Example: `  $ reearth cms item delete 01j... -m parks --yes`,
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id := args[0]
 			if err := checkSafeMode(f, "item delete"); err != nil {
-				return err
-			}
-			if err := o.checkItemModel(f, model); err != nil {
 				return err
 			}
 			if err := f.Confirm(fmt.Sprintf("Delete item %s?", id)); err != nil {
@@ -387,7 +339,7 @@ func newCmdItemDelete(f *core.Factory, o *globalOptions) *cobra.Command {
 			})
 		},
 	}
-	addItemModelFlag(cmd, &model)
+	addModelFlag(cmd, &model)
 	return cmd
 }
 
@@ -396,11 +348,8 @@ func newCmdItemPublish(f *core.Factory, o *globalOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "publish <item-id>",
 		Short: "Publish an item",
-		Long: `Publish the latest version of an item, so the public API serves it.
-
-It calls the workspace-scoped API, so it needs a workspace (-w), a project
-(-p) and the item's model (-m).`,
-		Example: `  $ reearth cms item publish 01j... -m parks -w my-workspace -p my-project
+		Long:  "Publish the latest version of an item, so the public API serves it.",
+		Example: `  $ reearth cms item publish 01j... -m parks
   $ reearth cms item publish 01j... -m parks --yes`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -433,7 +382,6 @@ It calls the workspace-scoped API, so it needs a workspace (-w), a project
 			return printItem(f, &it)
 		},
 	}
-	cmd.Flags().StringVarP(&model, "model", "m", "", "The item's model ID or key (required)")
-	_ = cmd.MarkFlagRequired("model")
+	addModelFlag(cmd, &model)
 	return cmd
 }

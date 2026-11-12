@@ -89,11 +89,13 @@ func setup(t *testing.T, api *fakeServer, extra envvar.Map) {
 	dir := t.TempDir()
 	t.Chdir(dir)
 	env := envvar.Map{
-		"REEARTH_CONFIG_DIR":   filepath.Join(dir, "config"),
-		"REEARTH_CACHE_DIR":    filepath.Join(dir, "cache"),
-		"REEARTH_DATA_DIR":     filepath.Join(dir, "data"),
-		"REEARTH_CMS_TOKEN":    "test-token",
-		"REEARTH_CMS_BASE_URL": api.srv.URL,
+		"REEARTH_CONFIG_DIR":    filepath.Join(dir, "config"),
+		"REEARTH_CACHE_DIR":     filepath.Join(dir, "cache"),
+		"REEARTH_DATA_DIR":      filepath.Join(dir, "data"),
+		"REEARTH_CMS_TOKEN":     "test-token",
+		"REEARTH_CMS_BASE_URL":  api.srv.URL,
+		"REEARTH_CMS_WORKSPACE": "ws1",
+		"REEARTH_CMS_PROJECT":   "proj",
 	}
 	for k, v := range extra {
 		env[k] = v
@@ -129,12 +131,12 @@ var item = map[string]any{
 // The SDK is given no token; the authenticated client sets the real one.
 func TestModelListSendsTheTokenAndPrints(t *testing.T) {
 	api := newFakeServer(t, map[string]http.HandlerFunc{
-		"GET /api/projects/proj/models": reply(map[string]any{
+		"GET /api/ws1/projects/proj/models": reply(map[string]any{
 			"models": []any{map[string]any{"id": "m1", "key": "parks", "name": "Parks"}},
 			"page":   1, "perPage": 50, "totalCount": 1,
 		}),
 	})
-	setup(t, api, envvar.Map{"REEARTH_CMS_PROJECT": "proj"})
+	setup(t, api, nil)
 
 	r := run(t, "cms", "model", "list")
 	if r.code != 0 || !strings.HasPrefix(r.out, "m1\tparks\tParks\tfalse\t") {
@@ -151,49 +153,52 @@ func TestModelListSendsTheTokenAndPrints(t *testing.T) {
 	}
 }
 
-func TestProjectComesFromFlagEnvOrFile(t *testing.T) {
+func TestWorkspaceAndProjectComeFromFlagEnvOrFile(t *testing.T) {
 	api := newFakeServer(t, map[string]http.HandlerFunc{
-		"GET /api/projects/{p}/models": reply(map[string]any{"models": []any{}}),
+		"GET /api/{ws}/projects/{p}/models": reply(map[string]any{"models": []any{}}),
 	})
-	setup(t, api, nil)
-	if r := run(t, "cms", "model", "list"); r.code != cmdutil.ExitUsage || !strings.Contains(r.errOut, "-p") {
+	setup(t, api, envvar.Map{"REEARTH_CMS_WORKSPACE": "", "REEARTH_CMS_PROJECT": ""})
+	if r := run(t, "cms", "model", "list", "-p", "proj"); r.code != cmdutil.ExitUsage || !strings.Contains(r.errOut, "-w") {
+		t.Fatalf("no workspace: %+v", r)
+	}
+	if r := run(t, "cms", "model", "list", "-w", "ws1"); r.code != cmdutil.ExitUsage || !strings.Contains(r.errOut, "-p") {
 		t.Fatalf("no project: %+v", r)
 	}
-	if err := os.WriteFile(".reearth.yaml", []byte("cms:\n  project: from-file\n"), 0o644); err != nil {
+	if err := os.WriteFile(".reearth.yaml", []byte("cms:\n  workspace: ws-file\n  project: from-file\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if r := run(t, "cms", "model", "list"); r.code != 0 {
 		t.Fatalf("file: %+v", r)
 	}
-	if r := run(t, "cms", "model", "list", "-p", "from-flag"); r.code != 0 {
+	if r := run(t, "cms", "model", "list", "-w", "ws-flag", "-p", "from-flag"); r.code != 0 {
 		t.Fatalf("flag: %+v", r)
 	}
 	got := api.requests()
-	if len(got) != 2 || got[0].Path != "/api/projects/from-file/models" || got[1].Path != "/api/projects/from-flag/models" {
+	if len(got) != 2 || got[0].Path != "/api/ws-file/projects/from-file/models" || got[1].Path != "/api/ws-flag/projects/from-flag/models" {
 		t.Fatalf("requests: %+v", got)
 	}
 }
 
-func TestModelGetFallsBackToKey(t *testing.T) {
+func TestModelGetByKey(t *testing.T) {
 	api := newFakeServer(t, map[string]http.HandlerFunc{
-		"GET /api/models/parks":               status(http.StatusNotFound),
-		"GET /api/projects/proj/models/parks": reply(map[string]any{"id": "m1", "key": "parks"}),
+		"GET /api/ws1/projects/proj/models/parks":   reply(map[string]any{"id": "m1", "key": "parks"}),
+		"GET /api/ws1/projects/proj/models/missing": status(http.StatusNotFound),
 	})
 	setup(t, api, nil)
-	r := run(t, "cms", "model", "get", "parks", "-p", "proj", "--json=id")
+	r := run(t, "cms", "model", "get", "parks", "--json=id")
 	if r.code != 0 || !strings.Contains(r.out, `"id": "m1"`) {
 		t.Fatalf("%+v", r)
 	}
-	if r := run(t, "cms", "model", "get", "parks"); r.code != cmdutil.ExitNotFound {
-		t.Fatalf("without a project: %+v", r)
+	if r := run(t, "cms", "model", "get", "missing"); r.code != cmdutil.ExitNotFound {
+		t.Fatalf("missing: %+v", r)
 	}
 }
 
 // People get one row per field, with the fields of a group under its key.
 func TestItemGetListsFields(t *testing.T) {
-	api := newFakeServer(t, map[string]http.HandlerFunc{"GET /api/items/it1": reply(item)})
+	api := newFakeServer(t, map[string]http.HandlerFunc{"GET /api/ws1/projects/proj/models/m1/items/it1": reply(item)})
 	setup(t, api, nil)
-	r := run(t, "cms", "item", "get", "it1")
+	r := run(t, "cms", "item", "get", "it1", "-m", "m1")
 	for _, want := range []string{"id\tit1\n", "title\ttext\tHello\n", "spots[0].name\ttext\tGate\n", "status\tselect\tdraft\n"} {
 		if r.code != 0 || !strings.Contains(r.out, want) {
 			t.Fatalf("missing %q: %+v", want, r)
@@ -203,7 +208,7 @@ func TestItemGetListsFields(t *testing.T) {
 		t.Fatalf("query: %q", q)
 	}
 	// Machines get the item as the API returns it.
-	r = run(t, "cms", "item", "get", "it1", "--jq", ".fields[2].group")
+	r = run(t, "cms", "item", "get", "it1", "-m", "m1", "--jq", ".fields[2].group")
 	if r.code != 0 || strings.TrimSpace(r.out) != "g1" {
 		t.Fatalf("json: %+v", r)
 	}
@@ -212,7 +217,7 @@ func TestItemGetListsFields(t *testing.T) {
 // Piped, every field is a column and no value is cut.
 func TestItemListPlainHasEveryField(t *testing.T) {
 	api := newFakeServer(t, map[string]http.HandlerFunc{
-		"GET /api/models/m1/items": reply(map[string]any{"items": []any{item}, "page": 1, "perPage": 50, "totalCount": 1}),
+		"GET /api/ws1/projects/proj/models/m1/items": reply(map[string]any{"items": []any{item}, "page": 1, "perPage": 50, "totalCount": 1}),
 	})
 	setup(t, api, nil)
 	r := run(t, "cms", "item", "list", "-m", "m1")
@@ -228,10 +233,10 @@ func TestItemListPlainHasEveryField(t *testing.T) {
 
 func TestItemCreateSendsFields(t *testing.T) {
 	api := newFakeServer(t, map[string]http.HandlerFunc{
-		"POST /api/projects/proj/models/parks/items": reply(item),
+		"POST /api/ws1/projects/proj/models/parks/items": reply(item),
 	})
 	setup(t, api, nil)
-	r := run(t, "cms", "item", "create", "-p", "proj", "-m", "parks",
+	r := run(t, "cms", "item", "create", "-m", "parks",
 		"-k", "title", "-t", "text", "-v", "Hello", "-K", "status", "-T", "select", "-V", "draft", "--json=id")
 	if r.code != 0 || !strings.Contains(r.out, `"it1"`) {
 		t.Fatalf("%+v", r)
@@ -258,12 +263,12 @@ func TestItemCreateSendsFields(t *testing.T) {
 
 func TestSafeModeRefusesUpdateAndDelete(t *testing.T) {
 	api := newFakeServer(t, map[string]http.HandlerFunc{
-		"PATCH /api/items/it1":  reply(item),
-		"DELETE /api/items/it1": reply(map[string]any{"id": "it1"}),
-		"GET /api/items/it1":    reply(item),
+		"PATCH /api/ws1/projects/proj/models/m1/items/it1":  reply(item),
+		"DELETE /api/ws1/projects/proj/models/m1/items/it1": reply(map[string]any{"id": "it1"}),
+		"GET /api/ws1/projects/proj/models/m1/items/it1":    reply(item),
 	})
-	update := []string{"cms", "item", "update", "it1", "-k", "title", "-t", "text", "-v", "x", "--yes"}
-	del := []string{"cms", "item", "delete", "it1", "--yes"}
+	update := []string{"cms", "item", "update", "it1", "-m", "m1", "-k", "title", "-t", "text", "-v", "x", "--yes"}
+	del := []string{"cms", "item", "delete", "it1", "-m", "m1", "--yes"}
 
 	for _, value := range []string{"true", "1", "YES"} {
 		setup(t, api, envvar.Map{"REEARTH_CMS_SAFE_MODE": value})
@@ -287,7 +292,7 @@ func TestSafeModeRefusesUpdateAndDelete(t *testing.T) {
 	}
 	// Reads still work in safe mode.
 	setup(t, api, envvar.Map{"REEARTH_CMS_SAFE_MODE": "true"})
-	if r := run(t, "cms", "item", "get", "it1"); r.code != 0 {
+	if r := run(t, "cms", "item", "get", "it1", "-m", "m1"); r.code != 0 {
 		t.Errorf("get: %+v", r)
 	}
 	if got := api.requests(); len(got) != 1 || got[0].Method != http.MethodGet {
@@ -295,7 +300,7 @@ func TestSafeModeRefusesUpdateAndDelete(t *testing.T) {
 	}
 
 	setup(t, api, envvar.Map{"REEARTH_CMS_SAFE_MODE": "false"})
-	if r := run(t, del[:4]...); r.code != cmdutil.ExitUsage || !strings.Contains(r.errOut, "--yes") {
+	if r := run(t, del[:6]...); r.code != cmdutil.ExitUsage || !strings.Contains(r.errOut, "--yes") {
 		t.Errorf("without --yes: %+v", r)
 	}
 	if r := run(t, update...); r.code != 0 {
@@ -306,9 +311,8 @@ func TestSafeModeRefusesUpdateAndDelete(t *testing.T) {
 	}
 }
 
-// With a workspace, the SDK calls the workspace-scoped API, which reaches an
-// item given by ID only through its project and model.
-func TestWorkspaceNeedsProjectAndModel(t *testing.T) {
+// The API reaches an item only through its model, so -m is required.
+func TestItemCommandsNeedTheModel(t *testing.T) {
 	const path = "/api/ws1/projects/proj/models/parks/items/it1"
 	api := newFakeServer(t, map[string]http.HandlerFunc{
 		"GET " + path:                reply(item),
@@ -316,10 +320,7 @@ func TestWorkspaceNeedsProjectAndModel(t *testing.T) {
 		"DELETE " + path:             reply(map[string]any{}),
 		"POST " + path + "/comments": reply(map[string]any{}),
 	})
-	setup(t, api, envvar.Map{"REEARTH_CMS_WORKSPACE": "ws1"})
-	if r := run(t, "cms", "item", "get", "it1", "-m", "parks"); r.code != cmdutil.ExitUsage {
-		t.Fatalf("no project: %+v", r)
-	}
+	setup(t, api, nil)
 	commands := [][]string{
 		{"item", "get", "it1"},
 		{"item", "update", "it1", "-k", "title", "-t", "text", "-v", "x", "--yes"},
@@ -327,8 +328,8 @@ func TestWorkspaceNeedsProjectAndModel(t *testing.T) {
 		{"comment", "item", "it1", "-c", "Checked"},
 	}
 	for _, args := range commands {
-		args = append([]string{"cms"}, append(args, "-p", "proj")...)
-		if r := run(t, args...); r.code != cmdutil.ExitUsage || !strings.Contains(r.errOut, "-m is required") {
+		args = append([]string{"cms"}, args...)
+		if r := run(t, args...); r.code == 0 || !strings.Contains(r.errOut, `"model"`) {
 			t.Errorf("%v without -m: %+v", args, r)
 		}
 		if r := run(t, append(args, "-m", "parks")...); r.code != 0 {
@@ -342,10 +343,10 @@ func TestWorkspaceNeedsProjectAndModel(t *testing.T) {
 
 func TestAPIErrorsMapToExitCodes(t *testing.T) {
 	api := newFakeServer(t, map[string]http.HandlerFunc{
-		"GET /api/assets/missing": status(http.StatusNotFound),
-		"GET /api/assets/denied":  status(http.StatusUnauthorized),
-		"GET /api/assets/invalid": status(http.StatusBadRequest),
-		"GET /api/assets/broken":  status(http.StatusConflict),
+		"GET /api/ws1/projects/proj/assets/missing": status(http.StatusNotFound),
+		"GET /api/ws1/projects/proj/assets/denied":  status(http.StatusUnauthorized),
+		"GET /api/ws1/projects/proj/assets/invalid": status(http.StatusBadRequest),
+		"GET /api/ws1/projects/proj/assets/broken":  status(http.StatusConflict),
 	})
 	setup(t, api, nil)
 	for id, want := range map[string]struct {
@@ -375,11 +376,11 @@ func TestAssetFilesSkipTheToken(t *testing.T) {
 		"GET /files/a.geojson": func(w http.ResponseWriter, _ *http.Request) { _, _ = io.WriteString(w, "content") },
 	})
 	api := newFakeServer(t, map[string]http.HandlerFunc{
-		"POST /api/projects/proj/assets/uploads": reply(map[string]any{"url": storage.srv.URL + "/upload", "token": "up1", "contentType": "application/geo+json"}),
-		"POST /api/projects/proj/assets":         reply(map[string]any{"id": "a1", "url": storage.srv.URL + "/files/a.geojson"}),
-		"GET /api/assets/a1":                     reply(map[string]any{"id": "a1", "url": storage.srv.URL + "/files/a.geojson"}),
+		"POST /api/ws1/projects/proj/assets/uploads": reply(map[string]any{"url": storage.srv.URL + "/upload", "token": "up1", "contentType": "application/geo+json"}),
+		"POST /api/ws1/projects/proj/assets":         reply(map[string]any{"id": "a1", "url": storage.srv.URL + "/files/a.geojson"}),
+		"GET /api/ws1/projects/proj/assets/a1":       reply(map[string]any{"id": "a1", "url": storage.srv.URL + "/files/a.geojson"}),
 	})
-	setup(t, api, envvar.Map{"REEARTH_CMS_PROJECT": "proj"})
+	setup(t, api, nil)
 	if err := os.WriteFile("a.geojson", []byte("{}"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -422,11 +423,11 @@ func TestAssetFilesSkipTheToken(t *testing.T) {
 
 func TestComment(t *testing.T) {
 	api := newFakeServer(t, map[string]http.HandlerFunc{
-		"POST /api/items/it1/comments": reply(map[string]any{}),
-		"POST /api/assets/a1/comments": reply(map[string]any{}),
+		"POST /api/ws1/projects/proj/models/parks/items/it1/comments": reply(map[string]any{}),
+		"POST /api/ws1/projects/proj/assets/a1/comments":              reply(map[string]any{}),
 	})
 	setup(t, api, nil)
-	if r := run(t, "cms", "comment", "item", "it1", "-c", "Checked"); r.code != 0 {
+	if r := run(t, "cms", "comment", "item", "it1", "-m", "parks", "-c", "Checked"); r.code != 0 {
 		t.Fatalf("item: %+v", r)
 	}
 	if r := run(t, "cms", "comment", "asset", "a1", "-c", "Fine"); r.code != 0 {
@@ -440,7 +441,7 @@ func TestComment(t *testing.T) {
 
 func TestAssetCreateFromURLAndDirect(t *testing.T) {
 	api := newFakeServer(t, map[string]http.HandlerFunc{
-		"POST /api/projects/proj/assets": func(w http.ResponseWriter, r *http.Request) {
+		"POST /api/ws1/projects/proj/assets": func(w http.ResponseWriter, r *http.Request) {
 			if !strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/form-data") {
 				writeJSON(w, map[string]any{"id": "from-url"})
 				return
@@ -456,11 +457,11 @@ func TestAssetCreateFromURLAndDirect(t *testing.T) {
 			}
 			writeJSON(w, map[string]any{"id": "direct"})
 		},
-		"GET /api/assets/from-url": reply(map[string]any{"id": "from-url", "name": "image.png"}),
+		"GET /api/ws1/projects/proj/assets/from-url": reply(map[string]any{"id": "from-url", "name": "image.png"}),
 		// The asset is not readable yet: create still reports its ID.
-		"GET /api/assets/direct": status(http.StatusNotFound),
+		"GET /api/ws1/projects/proj/assets/direct": status(http.StatusNotFound),
 	})
-	setup(t, api, envvar.Map{"REEARTH_CMS_PROJECT": "proj"})
+	setup(t, api, nil)
 	if err := os.MkdirAll("data", 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -488,11 +489,11 @@ func TestAssetFailures(t *testing.T) {
 		"GET /files/gone": status(http.StatusNotFound),
 	})
 	api := newFakeServer(t, map[string]http.HandlerFunc{
-		"POST /api/projects/proj/assets/uploads": reply(map[string]any{"url": storage.srv.URL + "/upload", "token": "up1"}),
-		"GET /api/assets/gone":                   reply(map[string]any{"id": "gone", "url": storage.srv.URL + "/files/gone"}),
-		"GET /api/assets/nourl":                  reply(map[string]any{"id": "nourl"}),
+		"POST /api/ws1/projects/proj/assets/uploads": reply(map[string]any{"url": storage.srv.URL + "/upload", "token": "up1"}),
+		"GET /api/ws1/projects/proj/assets/gone":     reply(map[string]any{"id": "gone", "url": storage.srv.URL + "/files/gone"}),
+		"GET /api/ws1/projects/proj/assets/nourl":    reply(map[string]any{"id": "nourl"}),
 	})
-	setup(t, api, envvar.Map{"REEARTH_CMS_PROJECT": "proj"})
+	setup(t, api, nil)
 	if err := os.WriteFile("a.geojson", []byte("{}"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -521,12 +522,12 @@ func TestAssetFailures(t *testing.T) {
 
 func TestPaging(t *testing.T) {
 	api := newFakeServer(t, map[string]http.HandlerFunc{
-		"GET /api/projects/proj/models": reply(map[string]any{
+		"GET /api/ws1/projects/proj/models": reply(map[string]any{
 			"models": []any{map[string]any{"id": "m1", "key": "parks"}},
 			"page":   1, "perPage": 1, "totalCount": 3,
 		}),
 	})
-	setup(t, api, envvar.Map{"REEARTH_CMS_PROJECT": "proj"})
+	setup(t, api, nil)
 
 	r := runTTY(t, "cms", "model", "list", "--per-page", "1")
 	if r.code != 0 || !strings.Contains(r.errOut, "page 1 of 3 models; pass --page 2 for the next") {
@@ -549,8 +550,8 @@ func TestPaging(t *testing.T) {
 
 func TestHumanViews(t *testing.T) {
 	api := newFakeServer(t, map[string]http.HandlerFunc{
-		"GET /api/assets/a1":    reply(map[string]any{"id": "a1", "name": "park.geojson", "url": "https://files.example.com/park.geojson"}),
-		"DELETE /api/items/it1": reply(map[string]any{}),
+		"GET /api/ws1/projects/proj/assets/a1":              reply(map[string]any{"id": "a1", "name": "park.geojson", "url": "https://files.example.com/park.geojson"}),
+		"DELETE /api/ws1/projects/proj/models/m1/items/it1": reply(map[string]any{}),
 	})
 	setup(t, api, nil)
 
@@ -565,7 +566,7 @@ func TestHumanViews(t *testing.T) {
 		t.Fatalf("asset get shows an empty row: %q", r.out)
 	}
 
-	r = runTTY(t, "cms", "item", "delete", "it1", "--yes")
+	r = runTTY(t, "cms", "item", "delete", "it1", "-m", "m1", "--yes")
 	if r.code != 0 || r.out != "" || !strings.Contains(r.errOut, "Deleted item it1") {
 		t.Fatalf("delete: %+v", r)
 	}

@@ -2,13 +2,11 @@ package cms
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"maps"
 	"slices"
 	"strings"
 
-	cmsapi "github.com/reearth/reearth-cms-api/go"
 	"github.com/reearth/reearth-cms-api/go/cmsoapi"
 	"github.com/spf13/cobra"
 
@@ -83,7 +81,7 @@ func newCmdModelList(f *core.Factory, o *globalOptions) *cobra.Command {
 func newCmdModelGet(f *core.Factory, o *globalOptions) *cobra.Command {
 	return &cobra.Command{
 		Use:   "get <model-id-or-key>",
-		Short: "Show a model by ID, or by key within a project",
+		Short: "Show a model by ID or key",
 		Example: `  $ reearth cms model get 01j...
   $ reearth cms model get parks -p my-project`,
 		Args: cobra.ExactArgs(1),
@@ -94,10 +92,6 @@ func newCmdModelGet(f *core.Factory, o *globalOptions) *cobra.Command {
 			}
 			f.IO.StartProgress("Fetching the model…")
 			m, err := c.GetModel(cmd.Context(), args[0])
-			// Not an ID: try it as a key in the project.
-			if project := o.projectOr(f); errors.Is(err, cmsapi.ErrNotFound) && project != "" {
-				m, err = c.GetModelByKey(cmd.Context(), project, args[0])
-			}
 			f.IO.StopProgress()
 			if err != nil {
 				return apiError(err, "model "+args[0])
@@ -130,11 +124,8 @@ func newCmdModelSchema(f *core.Factory, o *globalOptions) *cobra.Command {
 		Long: `Show the fields of a model: their keys, types, and whether they are
 required, as the JSON Schema the API returns. Use the keys and types with
 ` + "`item create`" + ` and ` + "`item update`" + ` (-k, -t). --metadata shows the metadata
-fields instead (-K, -T).
-
-It calls the workspace-scoped API, so it needs a workspace (-w) as well as a
-project (-p).`,
-		Example: `  $ reearth cms model schema parks -w my-workspace -p my-project
+fields instead (-K, -T).`,
+		Example: `  $ reearth cms model schema parks -p my-project
   $ reearth cms model schema parks --metadata
   $ reearth cms model schema parks --json`,
 		Args: cobra.ExactArgs(1),

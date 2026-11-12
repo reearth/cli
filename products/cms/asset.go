@@ -39,9 +39,7 @@ func newCmdAssetList(f *core.Factory, o *globalOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List the assets of a project",
-		Long: `List the assets of a project. It calls the workspace-scoped API, so it
-needs a workspace (-w) as well as a project (-p).`,
-		Example: `  $ reearth cms asset list -w my-workspace -p my-project
+		Example: `  $ reearth cms asset list -p my-project
   $ reearth cms asset list --keyword park --sort updatedAt --dir desc
   $ reearth cms asset list --json=id,name,url`,
 		Args: cobra.NoArgs,
