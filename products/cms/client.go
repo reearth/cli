@@ -30,11 +30,17 @@ func (o *globalOptions) requireProject(f *core.Factory) (string, error) {
 	return "", cmdutil.NoInputError("a project", "-p or set REEARTH_CMS_PROJECT")
 }
 
-// requireWorkspace returns the workspace from -w, REEARTH_CMS_WORKSPACE or
-// .reearth.yaml.
+// requireWorkspace returns the workspace from -w, REEARTH_CMS_WORKSPACE,
+// cms.workspace or workspace in .reearth.yaml, or the account's default.
 func (o *globalOptions) requireWorkspace(f *core.Factory) (string, error) {
 	if ws := f.ProjectValue(Product{}, "workspace", o.workspace); ws != "" {
 		return ws, nil
+	}
+	if proj := f.OptionalProject(); proj != nil && proj.Workspace != "" {
+		return proj.Workspace, nil
+	}
+	if r, err := f.Account(); err == nil && r.Account != nil && r.Account.Workspace != "" {
+		return r.Account.Workspace, nil
 	}
 	return "", cmdutil.NoInputError("a workspace", "-w or set REEARTH_CMS_WORKSPACE")
 }
@@ -162,8 +168,8 @@ func statusError(code int, err error, what string) error {
 		return cmdutil.NotFoundf("%s not found", what)
 	case http.StatusUnauthorized, http.StatusForbidden:
 		return &cmdutil.Error{Exit: cmdutil.ExitAuth, Code: "auth.rejected", Err: err,
-			Message: fmt.Sprintf("the CMS API rejected the token for %s", what),
-			Hint:    "check the integration token: `reearth login --with-token --product cms` or REEARTH_CMS_TOKEN"}
+			Message: fmt.Sprintf("the CMS API rejected the credentials for %s", what),
+			Hint:    "check that the account can access it, sign in again with `reearth login`, or check the integration token"}
 	case http.StatusBadRequest, http.StatusUnprocessableEntity:
 		return &cmdutil.Error{Exit: cmdutil.ExitUsage, Code: "cms.invalid_input", Err: err,
 			Message: fmt.Sprintf("the CMS API refused the request for %s: %v", what, err),

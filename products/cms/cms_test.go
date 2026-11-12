@@ -179,6 +179,35 @@ func TestWorkspaceAndProjectComeFromFlagEnvOrFile(t *testing.T) {
 	}
 }
 
+// Without -w, REEARTH_CMS_WORKSPACE or cms.workspace, the workspace is the
+// shared workspace in .reearth.yaml, then the account's default.
+func TestWorkspaceFallsBackToTheAccount(t *testing.T) {
+	api := newFakeServer(t, map[string]http.HandlerFunc{
+		"GET /api/{ws}/projects/{p}/models": reply(map[string]any{"models": []any{}}),
+	})
+	setup(t, api, envvar.Map{"REEARTH_CMS_WORKSPACE": ""})
+	cfg := "version: 1\nactive: me\naccounts:\n  me:\n    env: prod\n    kind: token\n    workspace: ws-account\n"
+	if err := os.MkdirAll("config", 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join("config", "config.yaml"), []byte(cfg), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if r := run(t, "cms", "model", "list"); r.code != 0 {
+		t.Fatalf("account: %+v", r)
+	}
+	if err := os.WriteFile(".reearth.yaml", []byte("workspace: ws-shared\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if r := run(t, "cms", "model", "list"); r.code != 0 {
+		t.Fatalf("shared: %+v", r)
+	}
+	got := api.requests()
+	if len(got) != 2 || got[0].Path != "/api/ws-account/projects/proj/models" || got[1].Path != "/api/ws-shared/projects/proj/models" {
+		t.Fatalf("requests: %+v", got)
+	}
+}
+
 func TestModelGetByKey(t *testing.T) {
 	api := newFakeServer(t, map[string]http.HandlerFunc{
 		"GET /api/ws1/projects/proj/models/parks":   reply(map[string]any{"id": "m1", "key": "parks"}),

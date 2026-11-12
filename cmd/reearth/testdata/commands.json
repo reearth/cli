@@ -624,7 +624,7 @@
         "name": "workspace",
         "shorthand": "w",
         "type": "string",
-        "usage": "Workspace ID or alias (default: REEARTH_CMS_WORKSPACE, then .reearth.yaml)"
+        "usage": "Workspace ID or alias (default: REEARTH_CMS_WORKSPACE, .reearth.yaml, then the account's default)"
       }
     ]
   },
