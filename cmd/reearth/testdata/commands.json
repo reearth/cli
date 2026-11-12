@@ -609,6 +609,455 @@
     ]
   },
   {
+    "path": "reearth cms",
+    "usage": "reearth cms [flags]",
+    "short": "Manage Re:Earth CMS projects, models, items, assets and comments",
+    "runnable": false,
+    "flags": [
+      {
+        "name": "project",
+        "shorthand": "p",
+        "type": "string",
+        "usage": "Project ID or alias (default: REEARTH_CMS_PROJECT, then .reearth.yaml)"
+      },
+      {
+        "name": "workspace",
+        "shorthand": "w",
+        "type": "string",
+        "usage": "Workspace ID or alias (default: REEARTH_CMS_WORKSPACE, .reearth.yaml, then the account's default)"
+      }
+    ]
+  },
+  {
+    "path": "reearth cms project",
+    "usage": "reearth cms project [flags]",
+    "short": "List projects",
+    "runnable": false
+  },
+  {
+    "path": "reearth cms project list",
+    "usage": "reearth cms project list [flags]",
+    "short": "List the projects of a workspace",
+    "runnable": true,
+    "flags": [
+      {
+        "name": "dir",
+        "type": "string",
+        "usage": "Sort direction with --sort: asc or desc"
+      },
+      {
+        "name": "keyword",
+        "type": "string",
+        "usage": "Only show results that match a keyword"
+      },
+      {
+        "name": "page",
+        "type": "int",
+        "default": "1",
+        "usage": "Page number"
+      },
+      {
+        "name": "per-page",
+        "type": "int",
+        "default": "50",
+        "usage": "Results per page"
+      },
+      {
+        "name": "sort",
+        "type": "string",
+        "usage": "Sort by createdAt or updatedAt"
+      }
+    ]
+  },
+  {
+    "path": "reearth cms model",
+    "usage": "reearth cms model [flags]",
+    "short": "List and show models, and show their fields",
+    "runnable": false
+  },
+  {
+    "path": "reearth cms model list",
+    "usage": "reearth cms model list [flags]",
+    "short": "List the models of a project",
+    "runnable": true,
+    "flags": [
+      {
+        "name": "page",
+        "type": "int",
+        "default": "1",
+        "usage": "Page number"
+      },
+      {
+        "name": "per-page",
+        "type": "int",
+        "default": "50",
+        "usage": "Results per page"
+      }
+    ]
+  },
+  {
+    "path": "reearth cms model get",
+    "usage": "reearth cms model get \u003cmodel-id-or-key\u003e [flags]",
+    "short": "Show a model by ID or key",
+    "runnable": true
+  },
+  {
+    "path": "reearth cms model schema",
+    "usage": "reearth cms model schema \u003cmodel-id-or-key\u003e [flags]",
+    "short": "Show the fields of a model as a JSON Schema",
+    "runnable": true,
+    "flags": [
+      {
+        "name": "metadata",
+        "type": "bool",
+        "usage": "Show the metadata fields"
+      }
+    ]
+  },
+  {
+    "path": "reearth cms item",
+    "usage": "reearth cms item [flags]",
+    "short": "List, show, create, update, delete and publish items",
+    "runnable": false
+  },
+  {
+    "path": "reearth cms item list",
+    "usage": "reearth cms item list [flags]",
+    "short": "List the items of a model",
+    "runnable": true,
+    "flags": [
+      {
+        "name": "asset",
+        "type": "string",
+        "usage": "Include the data of referenced assets: true, or all for their files too"
+      },
+      {
+        "name": "dir",
+        "type": "string",
+        "usage": "Sort direction with --sort: asc or desc"
+      },
+      {
+        "name": "keyword",
+        "type": "string",
+        "usage": "Only show results that match a keyword"
+      },
+      {
+        "name": "model",
+        "shorthand": "m",
+        "type": "string",
+        "usage": "Model ID or key (required)"
+      },
+      {
+        "name": "page",
+        "type": "int",
+        "default": "1",
+        "usage": "Page number"
+      },
+      {
+        "name": "per-page",
+        "type": "int",
+        "default": "50",
+        "usage": "Results per page"
+      },
+      {
+        "name": "ref",
+        "type": "string",
+        "usage": "Which version of the items: latest or public"
+      },
+      {
+        "name": "sort",
+        "type": "string",
+        "usage": "Sort by createdAt or updatedAt"
+      }
+    ]
+  },
+  {
+    "path": "reearth cms item get",
+    "usage": "reearth cms item get \u003citem-id\u003e [flags]",
+    "short": "Show an item, with the data of its assets",
+    "runnable": true,
+    "flags": [
+      {
+        "name": "model",
+        "shorthand": "m",
+        "type": "string",
+        "usage": "Model ID or key (required)"
+      }
+    ]
+  },
+  {
+    "path": "reearth cms item create",
+    "usage": "reearth cms item create [flags]",
+    "short": "Create an item",
+    "runnable": true,
+    "flags": [
+      {
+        "name": "id",
+        "type": "stringArray",
+        "usage": "Field ID, in the order of -k (optional)"
+      },
+      {
+        "name": "key",
+        "shorthand": "k",
+        "type": "stringArray",
+        "usage": "Field key, once per field"
+      },
+      {
+        "name": "meta-id",
+        "type": "stringArray",
+        "usage": "Metadata field ID, in the order of -K (optional)"
+      },
+      {
+        "name": "meta-key",
+        "shorthand": "K",
+        "type": "stringArray",
+        "usage": "Metadata field key, once per field"
+      },
+      {
+        "name": "meta-type",
+        "shorthand": "T",
+        "type": "stringArray",
+        "usage": "Metadata field type, once per field"
+      },
+      {
+        "name": "meta-value",
+        "shorthand": "V",
+        "type": "stringArray",
+        "usage": "Metadata field value, once per field"
+      },
+      {
+        "name": "model",
+        "shorthand": "m",
+        "type": "string",
+        "usage": "Model ID or key (required)"
+      },
+      {
+        "name": "type",
+        "shorthand": "t",
+        "type": "stringArray",
+        "usage": "Field type, once per field"
+      },
+      {
+        "name": "value",
+        "shorthand": "v",
+        "type": "stringArray",
+        "usage": "Field value, once per field"
+      }
+    ]
+  },
+  {
+    "path": "reearth cms item update",
+    "usage": "reearth cms item update \u003citem-id\u003e [flags]",
+    "short": "Update the given fields of an item",
+    "runnable": true,
+    "flags": [
+      {
+        "name": "id",
+        "type": "stringArray",
+        "usage": "Field ID, in the order of -k (optional)"
+      },
+      {
+        "name": "key",
+        "shorthand": "k",
+        "type": "stringArray",
+        "usage": "Field key, once per field"
+      },
+      {
+        "name": "meta-id",
+        "type": "stringArray",
+        "usage": "Metadata field ID, in the order of -K (optional)"
+      },
+      {
+        "name": "meta-key",
+        "shorthand": "K",
+        "type": "stringArray",
+        "usage": "Metadata field key, once per field"
+      },
+      {
+        "name": "meta-type",
+        "shorthand": "T",
+        "type": "stringArray",
+        "usage": "Metadata field type, once per field"
+      },
+      {
+        "name": "meta-value",
+        "shorthand": "V",
+        "type": "stringArray",
+        "usage": "Metadata field value, once per field"
+      },
+      {
+        "name": "model",
+        "shorthand": "m",
+        "type": "string",
+        "usage": "Model ID or key (required)"
+      },
+      {
+        "name": "type",
+        "shorthand": "t",
+        "type": "stringArray",
+        "usage": "Field type, once per field"
+      },
+      {
+        "name": "value",
+        "shorthand": "v",
+        "type": "stringArray",
+        "usage": "Field value, once per field"
+      }
+    ]
+  },
+  {
+    "path": "reearth cms item delete",
+    "usage": "reearth cms item delete \u003citem-id\u003e [flags]",
+    "short": "Delete an item",
+    "runnable": true,
+    "flags": [
+      {
+        "name": "model",
+        "shorthand": "m",
+        "type": "string",
+        "usage": "Model ID or key (required)"
+      }
+    ]
+  },
+  {
+    "path": "reearth cms item publish",
+    "usage": "reearth cms item publish \u003citem-id\u003e [flags]",
+    "short": "Publish an item",
+    "runnable": true,
+    "flags": [
+      {
+        "name": "model",
+        "shorthand": "m",
+        "type": "string",
+        "usage": "Model ID or key (required)"
+      }
+    ]
+  },
+  {
+    "path": "reearth cms asset",
+    "usage": "reearth cms asset [flags]",
+    "short": "List, show, upload and download assets",
+    "runnable": false
+  },
+  {
+    "path": "reearth cms asset list",
+    "usage": "reearth cms asset list [flags]",
+    "short": "List the assets of a project",
+    "runnable": true,
+    "flags": [
+      {
+        "name": "dir",
+        "type": "string",
+        "usage": "Sort direction with --sort: asc or desc"
+      },
+      {
+        "name": "keyword",
+        "type": "string",
+        "usage": "Only show results that match a keyword"
+      },
+      {
+        "name": "page",
+        "type": "int",
+        "default": "1",
+        "usage": "Page number"
+      },
+      {
+        "name": "per-page",
+        "type": "int",
+        "default": "50",
+        "usage": "Results per page"
+      },
+      {
+        "name": "sort",
+        "type": "string",
+        "usage": "Sort by createdAt or updatedAt"
+      }
+    ]
+  },
+  {
+    "path": "reearth cms asset get",
+    "usage": "reearth cms asset get \u003casset-id\u003e [flags]",
+    "short": "Show an asset",
+    "runnable": true
+  },
+  {
+    "path": "reearth cms asset create",
+    "usage": "reearth cms asset create [flags]",
+    "short": "Upload a file (-f) or a file at a URL (-u) as an asset",
+    "runnable": true,
+    "flags": [
+      {
+        "name": "direct",
+        "type": "bool",
+        "usage": "Send the file to the CMS API instead of a signed URL (only with -f)"
+      },
+      {
+        "name": "file",
+        "shorthand": "f",
+        "type": "string",
+        "usage": "File to upload"
+      },
+      {
+        "name": "url",
+        "shorthand": "u",
+        "type": "string",
+        "usage": "URL of a file for CMS to fetch"
+      }
+    ]
+  },
+  {
+    "path": "reearth cms asset cat",
+    "usage": "reearth cms asset cat \u003casset-id\u003e [flags]",
+    "short": "Write an asset's content to stdout",
+    "runnable": true
+  },
+  {
+    "path": "reearth cms asset cp",
+    "usage": "reearth cms asset cp \u003casset-id\u003e \u003cdestination\u003e [flags]",
+    "short": "Download an asset's content to a file",
+    "runnable": true
+  },
+  {
+    "path": "reearth cms comment",
+    "usage": "reearth cms comment [flags]",
+    "short": "Comment on items and assets",
+    "runnable": false
+  },
+  {
+    "path": "reearth cms comment item",
+    "usage": "reearth cms comment item \u003citem-id\u003e [flags]",
+    "short": "Add a comment to an item",
+    "runnable": true,
+    "flags": [
+      {
+        "name": "content",
+        "shorthand": "c",
+        "type": "string",
+        "usage": "Comment text (required)"
+      },
+      {
+        "name": "model",
+        "shorthand": "m",
+        "type": "string",
+        "usage": "Model ID or key (required)"
+      }
+    ]
+  },
+  {
+    "path": "reearth cms comment asset",
+    "usage": "reearth cms comment asset \u003casset-id\u003e [flags]",
+    "short": "Add a comment to an asset",
+    "runnable": true,
+    "flags": [
+      {
+        "name": "content",
+        "shorthand": "c",
+        "type": "string",
+        "usage": "Comment text (required)"
+      }
+    ]
+  },
+  {
     "path": "reearth login",
     "usage": "reearth login [account] [flags]",
     "short": "Sign in and add or refresh an account",
