@@ -89,7 +89,7 @@
   {
     "path": "reearth visualizer",
     "usage": "reearth visualizer [flags]",
-    "short": "Develop Re:Earth Visualizer plugins and list projects",
+    "short": "Manage Re:Earth Visualizer projects and develop plugins",
     "aliases": [
       "vis"
     ],
@@ -98,7 +98,7 @@
   {
     "path": "reearth visualizer project",
     "usage": "reearth visualizer project [flags]",
-    "short": "List Visualizer projects",
+    "short": "List, create, edit and delete Visualizer projects",
     "runnable": false
   },
   {
@@ -148,9 +148,261 @@
     ]
   },
   {
+    "path": "reearth visualizer project view",
+    "usage": "reearth visualizer project view [project-id] [flags]",
+    "short": "Show one project",
+    "runnable": true,
+    "flags": [
+      {
+        "name": "project",
+        "shorthand": "p",
+        "type": "string",
+        "usage": "Project ID, instead of the argument"
+      },
+      {
+        "name": "web",
+        "type": "bool",
+        "usage": "Open the project in the Visualizer editor"
+      }
+    ]
+  },
+  {
+    "path": "reearth visualizer project create",
+    "usage": "reearth visualizer project create [flags]",
+    "short": "Create a project",
+    "runnable": true,
+    "flags": [
+      {
+        "name": "alias",
+        "type": "string",
+        "usage": "Project alias, unique in the workspace (default: p-\u003cproject-id\u003e)"
+      },
+      {
+        "name": "description",
+        "type": "string",
+        "usage": "Project description"
+      },
+      {
+        "name": "name",
+        "type": "string",
+        "usage": "Project name"
+      },
+      {
+        "name": "visibility",
+        "type": "string",
+        "usage": "Project visibility: public or private (private needs a paid plan)"
+      },
+      {
+        "name": "workspace",
+        "shorthand": "w",
+        "type": "string",
+        "usage": "Workspace ID (default: REEARTH_VISUALIZER_WORKSPACE, .reearth.yaml, then the account's default)"
+      }
+    ]
+  },
+  {
+    "path": "reearth visualizer project edit",
+    "usage": "reearth visualizer project edit [project-id] [flags]",
+    "short": "Change a project's name, description, starred or archived state",
+    "runnable": true,
+    "flags": [
+      {
+        "name": "archived",
+        "type": "bool",
+        "usage": "Archive or unarchive the project (--archived=false)"
+      },
+      {
+        "name": "description",
+        "type": "string",
+        "usage": "New project description"
+      },
+      {
+        "name": "name",
+        "type": "string",
+        "usage": "New project name"
+      },
+      {
+        "name": "project",
+        "shorthand": "p",
+        "type": "string",
+        "usage": "Project ID, instead of the argument"
+      },
+      {
+        "name": "starred",
+        "type": "bool",
+        "usage": "Star or unstar the project (--starred=false)"
+      }
+    ]
+  },
+  {
+    "path": "reearth visualizer project delete",
+    "usage": "reearth visualizer project delete \u003cproject-id\u003e [flags]",
+    "short": "Move a project to the trash, or delete it permanently",
+    "runnable": true,
+    "flags": [
+      {
+        "name": "permanent",
+        "type": "bool",
+        "usage": "Delete for good; the project must already be in the trash"
+      },
+      {
+        "name": "project",
+        "shorthand": "p",
+        "type": "string",
+        "usage": "Project ID, instead of the argument"
+      }
+    ]
+  },
+  {
+    "path": "reearth visualizer project restore",
+    "usage": "reearth visualizer project restore \u003cproject-id\u003e [flags]",
+    "short": "Restore a project from the trash",
+    "runnable": true,
+    "flags": [
+      {
+        "name": "project",
+        "shorthand": "p",
+        "type": "string",
+        "usage": "Project ID, instead of the argument"
+      }
+    ]
+  },
+  {
+    "path": "reearth visualizer project publish",
+    "usage": "reearth visualizer project publish [project-id] [flags]",
+    "short": "Publish a project and print its URL",
+    "runnable": true,
+    "flags": [
+      {
+        "name": "alias",
+        "type": "string",
+        "usage": "Published alias, which names the published URL (default: keep the current one)"
+      },
+      {
+        "name": "index",
+        "type": "bool",
+        "usage": "Let search engines index the published project"
+      },
+      {
+        "name": "project",
+        "shorthand": "p",
+        "type": "string",
+        "usage": "Project ID, instead of the argument"
+      }
+    ]
+  },
+  {
+    "path": "reearth visualizer project unpublish",
+    "usage": "reearth visualizer project unpublish \u003cproject-id\u003e [flags]",
+    "short": "Take a published project offline",
+    "runnable": true,
+    "flags": [
+      {
+        "name": "project",
+        "shorthand": "p",
+        "type": "string",
+        "usage": "Project ID, instead of the argument"
+      }
+    ]
+  },
+  {
+    "path": "reearth visualizer project export",
+    "usage": "reearth visualizer project export [project-id] [flags]",
+    "short": "Download a project as a zip",
+    "runnable": true,
+    "flags": [
+      {
+        "name": "force",
+        "type": "bool",
+        "usage": "Replace an existing file"
+      },
+      {
+        "name": "output",
+        "shorthand": "o",
+        "type": "string",
+        "usage": "Zip path, or - for stdout (default: \u003cproject-id\u003e.zip)"
+      },
+      {
+        "name": "project",
+        "shorthand": "p",
+        "type": "string",
+        "usage": "Project ID, instead of the argument"
+      }
+    ]
+  },
+  {
+    "path": "reearth visualizer project import",
+    "usage": "reearth visualizer project import \u003cfile\u003e [flags]",
+    "short": "Import a project from an export zip",
+    "runnable": true,
+    "flags": [
+      {
+        "name": "no-wait",
+        "type": "bool",
+        "usage": "Return after the upload without waiting for the import"
+      },
+      {
+        "name": "timeout",
+        "type": "duration",
+        "default": "10m0s",
+        "usage": "How long to wait for the import"
+      },
+      {
+        "name": "workspace",
+        "shorthand": "w",
+        "type": "string",
+        "usage": "Workspace ID (default: REEARTH_VISUALIZER_WORKSPACE, .reearth.yaml, then the account's default)"
+      }
+    ]
+  },
+  {
+    "path": "reearth visualizer story",
+    "usage": "reearth visualizer story [flags]",
+    "short": "Publish and unpublish a project's story",
+    "runnable": false
+  },
+  {
+    "path": "reearth visualizer story publish",
+    "usage": "reearth visualizer story publish [project-id] [flags]",
+    "short": "Publish a project's story and print its URL",
+    "runnable": true,
+    "flags": [
+      {
+        "name": "alias",
+        "type": "string",
+        "usage": "Alias in the story's URL (default: keep the current one)"
+      },
+      {
+        "name": "index",
+        "type": "bool",
+        "usage": "Let search engines index the published story"
+      },
+      {
+        "name": "project",
+        "shorthand": "p",
+        "type": "string",
+        "usage": "Project ID, instead of the argument"
+      }
+    ]
+  },
+  {
+    "path": "reearth visualizer story unpublish",
+    "usage": "reearth visualizer story unpublish \u003cproject-id\u003e [flags]",
+    "short": "Take a project's published story offline",
+    "runnable": true,
+    "flags": [
+      {
+        "name": "project",
+        "shorthand": "p",
+        "type": "string",
+        "usage": "Project ID, instead of the argument"
+      }
+    ]
+  },
+  {
     "path": "reearth visualizer plugin",
     "usage": "reearth visualizer plugin [flags]",
-    "short": "Create, run and package Visualizer plugins",
+    "short": "Create, run, package and install Visualizer plugins",
     "runnable": false
   },
   {
@@ -295,6 +547,64 @@
         "shorthand": "o",
         "type": "string",
         "usage": "Zip file to write (default: \u003cdir\u003e/package/\u003cid\u003e-\u003cversion\u003e.zip)"
+      }
+    ]
+  },
+  {
+    "path": "reearth visualizer plugin push",
+    "usage": "reearth visualizer plugin push [flags]",
+    "short": "Upload a plugin and install it in a project",
+    "runnable": true,
+    "flags": [
+      {
+        "name": "dir",
+        "type": "string",
+        "default": ".",
+        "usage": "Plugin directory"
+      },
+      {
+        "name": "project",
+        "shorthand": "p",
+        "type": "string",
+        "usage": "Project ID (default: REEARTH_VISUALIZER_PROJECT, then .reearth.yaml)"
+      },
+      {
+        "name": "url",
+        "type": "string",
+        "usage": "Have the server download the plugin from this GitHub repository URL"
+      }
+    ]
+  },
+  {
+    "path": "reearth visualizer plugin list",
+    "usage": "reearth visualizer plugin list [flags]",
+    "short": "List the plugins installed in a project",
+    "runnable": true,
+    "flags": [
+      {
+        "name": "all",
+        "type": "bool",
+        "usage": "Include the built-in plugin"
+      },
+      {
+        "name": "project",
+        "shorthand": "p",
+        "type": "string",
+        "usage": "Project ID (default: REEARTH_VISUALIZER_PROJECT, then .reearth.yaml)"
+      }
+    ]
+  },
+  {
+    "path": "reearth visualizer plugin uninstall",
+    "usage": "reearth visualizer plugin uninstall \u003cplugin-id\u003e [flags]",
+    "short": "Remove a plugin from a project",
+    "runnable": true,
+    "flags": [
+      {
+        "name": "project",
+        "shorthand": "p",
+        "type": "string",
+        "usage": "Project ID"
       }
     ]
   },

@@ -14,6 +14,8 @@ import (
 	"github.com/reearth/cli/sdk/core"
 )
 
+// project and plugin mirror the Visualizer API (/api/v1) responses. Their
+// JSON field names are what --json prints, so they follow the API's names.
 type project struct {
 	ID                string     `json:"id"`
 	WorkspaceID       string     `json:"workspaceId"`
@@ -21,6 +23,9 @@ type project struct {
 	Name              string     `json:"name"`
 	Description       string     `json:"description"`
 	Alias             string     `json:"alias"`
+	PublishedAlias    string     `json:"publishedAlias,omitempty"`
+	ImportStatus      string     `json:"importStatus,omitempty"`
+	ImportError       string     `json:"importError,omitempty"`
 	Visibility        string     `json:"visibility"`
 	Starred           bool       `json:"starred"`
 	Archived          bool       `json:"archived"`
@@ -32,12 +37,38 @@ type project struct {
 	UpdatedAt         time.Time  `json:"updatedAt"`
 }
 
+type publishResult struct {
+	Project project `json:"project"`
+	URL     string  `json:"url,omitempty"`
+}
+
 type projectList struct {
 	Items      []project `json:"items"`
 	TotalCount int       `json:"totalCount"`
 	NextCursor string    `json:"nextCursor,omitempty"`
 }
 
+type plugin struct {
+	ID          string            `json:"id"`
+	Name        string            `json:"name"`
+	Version     string            `json:"version"`
+	Description string            `json:"description,omitempty"`
+	Author      string            `json:"author,omitempty"`
+	System      bool              `json:"system"`
+	Extensions  []pluginExtension `json:"extensions"`
+}
+
+type pluginExtension struct {
+	ID   string `json:"id"`
+	Type string `json:"type"`
+	Name string `json:"name"`
+}
+
+type pluginList struct {
+	Items []plugin `json:"items"`
+}
+
+// client calls the Visualizer API as the current account.
 type client struct {
 	f    *core.Factory
 	http *http.Client
@@ -57,6 +88,7 @@ func newClient(ctx context.Context, f *core.Factory) (*client, error) {
 	return &client{f: f, http: hc, base: base}, nil
 }
 
+// doJSON sends in (if not nil) as JSON and decodes the response into out (if not nil).
 func (c *client) doJSON(ctx context.Context, method, path string, query url.Values, in, out any) error {
 	var body io.Reader
 	contentType := ""
@@ -67,6 +99,34 @@ func (c *client) doJSON(ctx context.Context, method, path string, query url.Valu
 		}
 		body, contentType = bytes.NewReader(b), "application/json"
 	}
+	return c.do(ctx, method, path, query, body, contentType, out)
+}
+
+// download sends a GET request and copies a successful response body to w.
+// It returns the number of bytes copied.
+func (c *client) download(ctx context.Context, path string, w io.Writer) (int64, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.base+path, nil)
+	if err != nil {
+		return 0, err
+	}
+	resp, err := streamClient(c.http).Do(req)
+	if err != nil {
+		return 0, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode >= 400 {
+		return 0, c.apiError(resp)
+	}
+	return io.Copy(w, resp.Body)
+}
+
+func streamClient(hc *http.Client) *http.Client {
+	cp := *hc
+	cp.Timeout = 0
+	return &cp
+}
+
+func (c *client) do(ctx context.Context, method, path string, query url.Values, body io.Reader, contentType string, out any) error {
 	u := c.base + path
 	if len(query) > 0 {
 		u += "?" + query.Encode()
@@ -93,6 +153,8 @@ func (c *client) doJSON(ctx context.Context, method, path string, query url.Valu
 	return json.NewDecoder(resp.Body).Decode(out)
 }
 
+// apiError turns an API error response into a CLI error with a stable code
+// ("visualizer.<api code>") and the matching exit code.
 func (c *client) apiError(resp *http.Response) error {
 	var e struct {
 		Error struct {
