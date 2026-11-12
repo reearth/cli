@@ -391,7 +391,15 @@
     "path": "reearth cms item get",
     "usage": "reearth cms item get \u003citem-id\u003e [flags]",
     "short": "Show an item, with the data of its assets",
-    "runnable": true
+    "runnable": true,
+    "flags": [
+      {
+        "name": "model",
+        "shorthand": "m",
+        "type": "string",
+        "usage": "The item's model ID, or key with -p (required with a workspace)"
+      }
+    ]
   },
   {
     "path": "reearth cms item create",
@@ -494,6 +502,12 @@
         "usage": "Metadata field value, once per field"
       },
       {
+        "name": "model",
+        "shorthand": "m",
+        "type": "string",
+        "usage": "The item's model ID, or key with -p (required with a workspace)"
+      },
+      {
         "name": "type",
         "shorthand": "t",
         "type": "stringArray",
@@ -511,7 +525,15 @@
     "path": "reearth cms item delete",
     "usage": "reearth cms item delete \u003citem-id\u003e [flags]",
     "short": "Delete an item",
-    "runnable": true
+    "runnable": true,
+    "flags": [
+      {
+        "name": "model",
+        "shorthand": "m",
+        "type": "string",
+        "usage": "The item's model ID, or key with -p (required with a workspace)"
+      }
+    ]
   },
   {
     "path": "reearth cms asset",
@@ -579,6 +601,12 @@
         "shorthand": "c",
         "type": "string",
         "usage": "Comment text (required)"
+      },
+      {
+        "name": "model",
+        "shorthand": "m",
+        "type": "string",
+        "usage": "The item's model ID, or key with -p (required with a workspace)"
       }
     ]
   },

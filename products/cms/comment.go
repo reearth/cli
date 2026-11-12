@@ -3,6 +3,7 @@ package cms
 import (
 	"context"
 
+	cmsapi "github.com/reearth/reearth-cms-api/go"
 	"github.com/spf13/cobra"
 
 	"github.com/reearth/cli/sdk/core"
@@ -13,24 +14,20 @@ func newCmdComment(f *core.Factory, o *globalOptions) *cobra.Command {
 		Use:   "comment",
 		Short: "Comment on items and assets",
 	}
-	cmd.AddCommand(
-		newCmdCommentOn(f, o, "item", func(ctx context.Context, c commenter, id, content string) error {
-			return c.CommentToItem(ctx, id, content)
-		}),
-		newCmdCommentOn(f, o, "asset", func(ctx context.Context, c commenter, id, content string) error {
-			return c.CommentToAsset(ctx, id, content)
-		}),
-	)
+	item := newCmdCommentOn(f, o, "item", func(ctx context.Context, c *cmsapi.CMS, model, id, content string) error {
+		return c.CommentToItemByModel(ctx, model, id, content)
+	})
+	asset := newCmdCommentOn(f, o, "asset", func(ctx context.Context, c *cmsapi.CMS, _, id, content string) error {
+		return c.CommentToAsset(ctx, id, content)
+	})
+	cmd.AddCommand(item, asset)
 	return cmd
 }
 
-type commenter interface {
-	CommentToItem(ctx context.Context, itemID, content string) error
-	CommentToAsset(ctx context.Context, assetID, content string) error
-}
-
-func newCmdCommentOn(f *core.Factory, o *globalOptions, target string, send func(context.Context, commenter, string, string) error) *cobra.Command {
-	var content string
+// newCmdCommentOn makes the command that comments on an item or an asset.
+// An item also takes its model (-m), which a workspace requires.
+func newCmdCommentOn(f *core.Factory, o *globalOptions, target string, send func(ctx context.Context, c *cmsapi.CMS, model, id, content string) error) *cobra.Command {
+	var content, model string
 	cmd := &cobra.Command{
 		Use:     target + " <" + target + "-id>",
 		Short:   "Add a comment to an " + target,
@@ -38,12 +35,17 @@ func newCmdCommentOn(f *core.Factory, o *globalOptions, target string, send func
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id := args[0]
+			if target == "item" {
+				if err := o.checkItemModel(f, model); err != nil {
+					return err
+				}
+			}
 			c, err := o.client(cmd.Context(), f)
 			if err != nil {
 				return err
 			}
 			f.IO.StartProgress("Adding the comment…")
-			err = send(cmd.Context(), c, id, content)
+			err = send(cmd.Context(), c, model, id, content)
 			f.IO.StopProgress()
 			if err != nil {
 				return apiError(err, target+" "+id)
@@ -64,5 +66,8 @@ func newCmdCommentOn(f *core.Factory, o *globalOptions, target string, send func
 	}
 	cmd.Flags().StringVarP(&content, "content", "c", "", "Comment text (required)")
 	_ = cmd.MarkFlagRequired("content")
+	if target == "item" {
+		addItemModelFlag(cmd, &model)
+	}
 	return cmd
 }

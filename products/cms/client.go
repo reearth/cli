@@ -33,6 +33,21 @@ func (o *globalOptions) requireProject(f *core.Factory) (string, error) {
 	return "", cmdutil.NoInputError("a project", "-p or set REEARTH_CMS_PROJECT")
 }
 
+// workspaceOr returns the workspace from -w, REEARTH_CMS_WORKSPACE or
+// .reearth.yaml, or "" when none is set.
+func (o *globalOptions) workspaceOr(f *core.Factory) string {
+	return f.ProjectValue(Product{}, "workspace", o.workspace)
+}
+
+// checkItemModel requires the model of an item given by ID when a workspace
+// is set: the workspace-scoped API reaches items only through their model.
+func (o *globalOptions) checkItemModel(f *core.Factory, model string) error {
+	if model == "" && o.workspaceOr(f) != "" {
+		return cmdutil.FlagErrorf("-m is required with a workspace: the item's model ID or key")
+	}
+	return nil
+}
+
 // client returns a CMS SDK client that calls the API through the
 // authenticated HTTP client. The SDK is given no token: it sets an empty
 // bearer header, which the authenticated client replaces.
@@ -52,7 +67,7 @@ func (o *globalOptions) client(ctx context.Context, f *core.Factory) (*cmsapi.CM
 	c = c.WithHTTPClient(hc)
 	// With a workspace, the SDK calls the workspace-scoped API, whose paths
 	// name the project even for an item or asset given by ID.
-	if ws := f.ProjectValue(Product{}, "workspace", o.workspace); ws != "" {
+	if ws := o.workspaceOr(f); ws != "" {
 		project, err := o.requireProject(f)
 		if err != nil {
 			return nil, err

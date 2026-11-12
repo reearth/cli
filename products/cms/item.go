@@ -17,7 +17,9 @@ func newCmdItem(f *core.Factory, o *globalOptions) *cobra.Command {
 		Short: "List, show, create, update and delete items",
 		Long: `List, show, create, update and delete the items of a model.
 
-A model is given by ID, or by key together with a project (-p). Field values
+A model is given by ID, or by key together with a project (-p). get, update
+and delete take the item's model with -m; it is required with a workspace
+(-w), whose API reaches items only through their model. Field values
 are given as -k <key> -t <type> -v <value>, repeated once per field, and
 metadata fields as -K, -T and -V. Values are sent as strings. For the
 field types and the values they take, see ` + "`reearth docs search \"CMS フィールド\"`" + `.
@@ -111,18 +113,23 @@ func newCmdItemList(f *core.Factory, o *globalOptions) *cobra.Command {
 }
 
 func newCmdItemGet(f *core.Factory, o *globalOptions) *cobra.Command {
-	return &cobra.Command{
-		Use:     "get <item-id>",
-		Short:   "Show an item, with the data of its assets",
-		Example: `  $ reearth cms item get 01j...`,
-		Args:    cobra.ExactArgs(1),
+	var model string
+	cmd := &cobra.Command{
+		Use:   "get <item-id>",
+		Short: "Show an item, with the data of its assets",
+		Example: `  $ reearth cms item get 01j...
+  $ reearth cms item get 01j... -m parks -w my-workspace -p my-project`,
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := o.checkItemModel(f, model); err != nil {
+				return err
+			}
 			c, err := o.client(cmd.Context(), f)
 			if err != nil {
 				return err
 			}
 			f.IO.StartProgress("Fetching the item…")
-			it, err := c.GetItem(cmd.Context(), args[0], true)
+			it, err := c.GetItemByModel(cmd.Context(), model, args[0], true)
 			f.IO.StopProgress()
 			if err != nil {
 				return apiError(err, "item "+args[0])
@@ -130,6 +137,13 @@ func newCmdItemGet(f *core.Factory, o *globalOptions) *cobra.Command {
 			return printItem(f, it)
 		},
 	}
+	addItemModelFlag(cmd, &model)
+	return cmd
+}
+
+// addItemModelFlag adds -m to a command that takes an item by ID.
+func addItemModelFlag(cmd *cobra.Command, model *string) {
+	cmd.Flags().StringVarP(model, "model", "m", "", "The item's model ID, or key with -p (required with a workspace)")
 }
 
 // fieldFlags are the -k/-t/-v and -K/-T/-V flags of create and update.
@@ -221,7 +235,10 @@ func newCmdItemCreate(f *core.Factory, o *globalOptions) *cobra.Command {
 }
 
 func newCmdItemUpdate(f *core.Factory, o *globalOptions) *cobra.Command {
-	var ff fieldFlags
+	var (
+		model string
+		ff    fieldFlags
+	)
 	cmd := &cobra.Command{
 		Use:   "update <item-id>",
 		Short: "Update the given fields of an item",
@@ -231,6 +248,9 @@ func newCmdItemUpdate(f *core.Factory, o *globalOptions) *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id := args[0]
 			if err := checkSafeMode(f, "item update"); err != nil {
+				return err
+			}
+			if err := o.checkItemModel(f, model); err != nil {
 				return err
 			}
 			fields, meta, err := ff.parse()
@@ -245,7 +265,7 @@ func newCmdItemUpdate(f *core.Factory, o *globalOptions) *cobra.Command {
 				return err
 			}
 			f.IO.StartProgress("Updating the item…")
-			it, err := c.UpdateItem(cmd.Context(), id, fields, meta)
+			it, err := c.UpdateItemByModel(cmd.Context(), model, id, fields, meta)
 			f.IO.StopProgress()
 			if err != nil {
 				return apiError(err, "item "+id)
@@ -254,12 +274,14 @@ func newCmdItemUpdate(f *core.Factory, o *globalOptions) *cobra.Command {
 			return printItem(f, it)
 		},
 	}
+	addItemModelFlag(cmd, &model)
 	ff.add(cmd)
 	return cmd
 }
 
 func newCmdItemDelete(f *core.Factory, o *globalOptions) *cobra.Command {
-	return &cobra.Command{
+	var model string
+	cmd := &cobra.Command{
 		Use:     "delete <item-id>",
 		Short:   "Delete an item",
 		Example: `  $ reearth cms item delete 01j... --yes`,
@@ -267,6 +289,9 @@ func newCmdItemDelete(f *core.Factory, o *globalOptions) *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id := args[0]
 			if err := checkSafeMode(f, "item delete"); err != nil {
+				return err
+			}
+			if err := o.checkItemModel(f, model); err != nil {
 				return err
 			}
 			if err := f.Confirm(fmt.Sprintf("Delete item %s?", id)); err != nil {
@@ -277,7 +302,7 @@ func newCmdItemDelete(f *core.Factory, o *globalOptions) *cobra.Command {
 				return err
 			}
 			f.IO.StartProgress("Deleting the item…")
-			err = c.DeleteItem(cmd.Context(), id)
+			err = c.DeleteItemByModel(cmd.Context(), model, id)
 			f.IO.StopProgress()
 			if err != nil {
 				return apiError(err, "item "+id)
@@ -295,4 +320,6 @@ func newCmdItemDelete(f *core.Factory, o *globalOptions) *cobra.Command {
 			})
 		},
 	}
+	addItemModelFlag(cmd, &model)
+	return cmd
 }

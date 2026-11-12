@@ -306,21 +306,37 @@ func TestSafeModeRefusesUpdateAndDelete(t *testing.T) {
 	}
 }
 
-// With a workspace, the SDK calls the workspace-scoped API, which needs the
-// project even for an item given by ID.
-func TestWorkspaceNeedsProject(t *testing.T) {
+// With a workspace, the SDK calls the workspace-scoped API, which reaches an
+// item given by ID only through its project and model.
+func TestWorkspaceNeedsProjectAndModel(t *testing.T) {
+	const path = "/api/ws1/projects/proj/models/parks/items/it1"
 	api := newFakeServer(t, map[string]http.HandlerFunc{
-		"GET /api/ws1/projects/proj/items/it1": reply(item),
+		"GET " + path:                reply(item),
+		"PATCH " + path:              reply(item),
+		"DELETE " + path:             reply(map[string]any{}),
+		"POST " + path + "/comments": reply(map[string]any{}),
 	})
 	setup(t, api, envvar.Map{"REEARTH_CMS_WORKSPACE": "ws1"})
-	if r := run(t, "cms", "item", "get", "it1"); r.code != cmdutil.ExitUsage {
+	if r := run(t, "cms", "item", "get", "it1", "-m", "parks"); r.code != cmdutil.ExitUsage {
 		t.Fatalf("no project: %+v", r)
 	}
-	if r := run(t, "cms", "item", "get", "it1", "-p", "proj"); r.code != 0 {
-		t.Fatalf("with project: %+v", r)
+	commands := [][]string{
+		{"item", "get", "it1"},
+		{"item", "update", "it1", "-k", "title", "-t", "text", "-v", "x", "--yes"},
+		{"item", "delete", "it1", "--yes"},
+		{"comment", "item", "it1", "-c", "Checked"},
 	}
-	if n := len(api.requests()); n != 1 {
-		t.Fatalf("made %d requests, want 1", n)
+	for _, args := range commands {
+		args = append([]string{"cms"}, append(args, "-p", "proj")...)
+		if r := run(t, args...); r.code != cmdutil.ExitUsage || !strings.Contains(r.errOut, "-m is required") {
+			t.Errorf("%v without -m: %+v", args, r)
+		}
+		if r := run(t, append(args, "-m", "parks")...); r.code != 0 {
+			t.Errorf("%v: %+v", args, r)
+		}
+	}
+	if n := len(api.requests()); n != len(commands) {
+		t.Fatalf("made %d requests, want %d", n, len(commands))
 	}
 }
 
