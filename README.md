@@ -44,6 +44,18 @@ Global flags: `--account`, `--json[=fields]`, `--jq`, `-o table|plain|json|yaml|
 
 Credentials are stored in the OS keyring (macOS Keychain, Windows Credential Manager, or Secret Service). On machines without a keyring, pass `--insecure-storage`. For CI, set `REEARTH_TOKEN`.
 
+## Agent skills for product development
+
+`reearth skills install` installs the skill for using this CLI. Skills for building on the products are in [`skills/`](skills/). They are not installed by default; install the ones you need with [`npx skills`](https://www.npmjs.com/package/skills), which asks whether to install for the current project or for every project:
+
+| Skill | Use it to |
+|---|---|
+| `reearth-visualizer-plugin` | Build, edit and debug Re:Earth Visualizer plugins |
+
+```sh
+npx skills add reearth/cli --skill reearth-visualizer-plugin
+```
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the design, how to add a product, development setup and the release process.
