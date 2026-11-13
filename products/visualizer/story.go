@@ -52,7 +52,8 @@ func newCmdStoryPublish(f *core.Factory) *cobra.Command {
 its published URL.
 
 By default the story is published as "limited": search engines are asked not
-to index it. --index publishes it as "public". --alias sets the alias in the
+to index it. --index publishes it as "public". "unpublish" sets it to
+"private", which means not published. --alias sets the alias in the
 story's URL; it is kept when omitted, and a story published for the first
 time gets "s-<story-id>".`,
 		Example: `  $ reearth vis story publish 01hq...
@@ -77,8 +78,8 @@ func newCmdStoryUnpublish(f *core.Factory) *cobra.Command {
 		Use:   "unpublish <project-id>",
 		Short: "Take a project's published story offline",
 		Long: `Take a project's published story offline. Its alias is kept, so publishing
-it again brings back the same URL. Asks for confirmation unless --yes is
-passed.`,
+it again brings back the same URL. Its status becomes "private", which means
+not published. Asks for confirmation unless --yes is passed.`,
 		Example: `  $ reearth vis story unpublish 01hq...`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id := args[0]
