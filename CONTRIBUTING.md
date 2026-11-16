@@ -54,14 +54,14 @@ All product CLIs live in this repository, in one Go module. Each product's API c
 
 ### Login
 
-- The browser flow is the authorization code flow with **PKCE (S256), which is mandatory**, and a loopback redirect to `127.0.0.1` on a random port.
+- The browser flow is the authorization code flow with **PKCE (S256), which is mandatory**, and a loopback redirect to `127.0.0.1` on the first free port of 8085, 8086 and 8087. The `port` setting in `config.yaml` fixes a single port instead. When none of the ports is free, login falls back to the device flow.
 - The device flow (RFC 8628) is used where a browser on the same machine cannot reach the loopback address: over SSH, in containers, in Codespaces, and on headless Linux. `--web` and `--device` override the detection.
 - Both flows use `golang.org/x/oauth2`. `github.com/cli/oauth` is not used: its browser flow sends no PKCE parameters and is specific to GitHub's token endpoint, and its token type drops `expires_in` and `id_token`.
 
 Auth0 settings for the CLI application:
 
 - Application type: Native (a public client with no secret)
-- Callback URL: `http://127.0.0.1/callback` (Auth0 accepts any port for loopback addresses)
+- Callback URLs: `http://127.0.0.1:8085/callback`, `http://127.0.0.1:8086/callback` and `http://127.0.0.1:8087/callback`. Auth0 matches the port exactly, including for loopback addresses, and does not support port wildcards, so each port must be listed.
 - Grants: Authorization Code, Device Code and Refresh Token, with refresh token rotation enabled
 
 The client ID of a public client is not a secret. It is still injected at build time (`-ldflags -X`) from repository secrets, so that the values for each environment are kept in one place. In development builds (see [Development](#development)), `REEARTH_AUTH_DOMAIN`, `REEARTH_AUTH_CLIENT_ID` and `REEARTH_AUTH_AUDIENCE` override these values for every environment. Release builds ignore these variables. Users can define other environments, such as on-premises installations, under `envs:` in the config file.
