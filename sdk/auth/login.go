@@ -9,6 +9,7 @@ import (
 	"html"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 	"unicode"
@@ -27,9 +28,10 @@ type LoginOptions struct {
 	HTTPClient *http.Client
 	// Timeout bounds the whole interactive login (default 10 minutes).
 	Timeout time.Duration
-	// Hostname is the hostname for the OAuth redirect listener (default: "localhost").
+	// Hostname is the hostname for the OAuth redirect listener (default: "127.0.0.1").
 	Hostname string
-	// Port fixes the loopback port for the OAuth redirect (0 = random).
+	// Port fixes the loopback port for the OAuth redirect. 0 tries
+	// DefaultLoopbackPorts in order.
 	Port int
 }
 
@@ -76,6 +78,30 @@ func audienceOpts(env *Env) []oauth2.AuthCodeOption {
 
 var errLoopbackUnavailable = errors.New("loopback unavailable")
 
+// DefaultLoopbackPorts are tried in order for the OAuth redirect when no port
+// is configured. Auth0 matches the port of a callback URL exactly, even for
+// loopback addresses, so the redirect cannot use a random port: each of these
+// must be registered as http://127.0.0.1:<port>/callback in the application.
+var DefaultLoopbackPorts = []int{8085, 8086, 8087}
+
+// listenLoopback listens on the given port, or on the first free port of
+// DefaultLoopbackPorts when port is 0.
+func listenLoopback(host string, port int) (net.Listener, error) {
+	ports := DefaultLoopbackPorts
+	if port != 0 {
+		ports = []int{port}
+	}
+	var errs []error
+	for _, p := range ports {
+		ln, err := net.Listen("tcp", net.JoinHostPort(host, strconv.Itoa(p)))
+		if err == nil {
+			return ln, nil
+		}
+		errs = append(errs, err)
+	}
+	return nil, fmt.Errorf("%w: %w", errLoopbackUnavailable, errors.Join(errs...))
+}
+
 type callbackResult struct {
 	code string
 	err  error
@@ -86,11 +112,12 @@ type callbackResult struct {
 func loopbackLogin(ctx context.Context, o LoginOptions) (*oauth2.Token, error) {
 	host := o.Hostname
 	if host == "" {
-		host = "localhost"
+		// An IP literal rather than "localhost" (RFC 8252 §8.3).
+		host = "127.0.0.1"
 	}
-	ln, err := net.Listen("tcp", fmt.Sprintf("%s:%d", host, o.Port))
+	ln, err := listenLoopback(host, o.Port)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %w", errLoopbackUnavailable, err)
+		return nil, err
 	}
 	port := ln.Addr().(*net.TCPAddr).Port
 	conf := o.Env.OAuth2Config(fmt.Sprintf("http://%s:%d/callback", host, port))
