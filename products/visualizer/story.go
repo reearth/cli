@@ -122,7 +122,7 @@ func publishStory(cmd *cobra.Command, f *core.Factory, args []string, status, al
 			f.IO.Success("Unpublished story %s", res.Story.Title)
 			return nil
 		}
-		f.IO.Success("Published story %s (%s)", res.Story.Title, status)
+		f.IO.Success("Published story %s: %s", res.Story.Title, publishStatusLabel(status))
 		if res.URL == "" {
 			f.IO.Warn("the server did not return a URL (no published host configured); the story's alias is %s", res.Story.PublishedAlias)
 			return nil

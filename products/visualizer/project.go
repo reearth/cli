@@ -172,7 +172,11 @@ Projects in the trash are left out unless --deleted is set. --keyword and
 				t := p.Table("ID", "NAME", "PUBLISH STATUS", "UPDATED")
 				for _, pr := range res.Items {
 					// Full IDs: they are what view, edit and delete take.
-					t.Row(pr.ID, pr.Name, pr.PublishmentStatus, output.Cell{Text: p.Time(pr.UpdatedAt), Style: cs.Dim})
+					status := pr.PublishmentStatus
+					if p.IsHuman() {
+						status = publishStatusLabel(status)
+					}
+					t.Row(pr.ID, pr.Name, status, output.Cell{Text: p.Time(pr.UpdatedAt), Style: cs.Dim})
 				}
 				if err := t.Render(); err != nil {
 					return err
@@ -530,14 +534,17 @@ which means not published. Asks for confirmation unless --yes is passed.`,
 	}
 }
 
+// publishStatusLabel adds a short meaning to a publish status for people
+// reading the output. It keeps the API's value first, so the table, --json
+// and `reearth api` all show the same word.
 func publishStatusLabel(s string) string {
 	switch s {
 	case "public":
-		return "public (published, search engines may index it)"
+		return "public (published, indexed)"
 	case "limited":
-		return "limited (published, not indexed by search engines)"
+		return "limited (published, not indexed)"
 	case "private":
-		return "private (not published)"
+		return "private (unpublished)"
 	}
 	return s
 }
@@ -573,7 +580,7 @@ func publishProject(cmd *cobra.Command, f *core.Factory, args []string, status, 
 			f.IO.Success("Unpublished %s", res.Project.Name)
 			return nil
 		}
-		f.IO.Success("Published %s (%s)", res.Project.Name, status)
+		f.IO.Success("Published %s: %s", res.Project.Name, publishStatusLabel(status))
 		if res.URL == "" {
 			f.IO.Warn("the server did not return a URL (no published host configured); the published alias is %s", res.Project.PublishedAlias)
 			return nil
