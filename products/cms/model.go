@@ -56,7 +56,7 @@ func newCmdModelList(f *core.Factory, o *globalOptions) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return p.Print(res.Models, func() error {
+			return p.Print(orEmpty(res.Models), func() error {
 				if len(res.Models) == 0 {
 					f.IO.Info("No models found")
 					return nil
@@ -308,9 +308,19 @@ func deref[T any](p *T) T {
 	return *p
 }
 
-// pageHint tells a person when there are more pages.
+// orEmpty returns s, or an empty slice for nil, so that --json prints []
+// rather than null when the API leaves a list out.
+func orEmpty[T any](s []T) []T {
+	if s == nil {
+		return []T{}
+	}
+	return s
+}
+
+// pageHint tells a person when there are more pages. total is the number of
+// results in all, as the API reports it.
 func pageHint(f *core.Factory, human, hasNext bool, page, total int, what string) {
 	if human && hasNext {
-		f.IO.Hint("page %d of %d %s; pass --page %d for the next", page, total, what, page+1)
+		f.IO.Hint("page %d (%d %s in all); pass --page %d for the next", page, total, what, page+1)
 	}
 }

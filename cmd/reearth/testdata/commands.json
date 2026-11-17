@@ -729,7 +729,7 @@
       {
         "name": "asset",
         "type": "string",
-        "usage": "Include the data of referenced assets: true, or all for their files too"
+        "usage": "Include the data of referenced assets: --asset, or --asset=all for their files too"
       },
       {
         "name": "dir",
