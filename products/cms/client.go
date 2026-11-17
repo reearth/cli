@@ -14,6 +14,7 @@ import (
 
 	"github.com/reearth/cli/sdk/cmdutil"
 	"github.com/reearth/cli/sdk/core"
+	"github.com/reearth/cli/sdk/envvar"
 )
 
 // globalOptions holds the flags every cms command shares.
@@ -32,6 +33,9 @@ func (o *globalOptions) requireProject(f *core.Factory) (string, error) {
 
 // requireWorkspace returns the workspace from -w, REEARTH_CMS_WORKSPACE,
 // cms.workspace or workspace in .reearth.yaml, or the account's default.
+// The account's default is skipped when REEARTH_CMS_TOKEN authenticates the
+// request instead of the account, so the two never come from different
+// principals.
 func (o *globalOptions) requireWorkspace(f *core.Factory) (string, error) {
 	if ws := f.ProjectValue(Product{}, "workspace", o.workspace); ws != "" {
 		return ws, nil
@@ -39,8 +43,10 @@ func (o *globalOptions) requireWorkspace(f *core.Factory) (string, error) {
 	if proj := f.OptionalProject(); proj != nil && proj.Workspace != "" {
 		return proj.Workspace, nil
 	}
-	if r, err := f.Account(); err == nil && r.Account != nil && r.Account.Workspace != "" {
-		return r.Account.Workspace, nil
+	if envvar.Get(core.ProductEnv(Product{}, "TOKEN")) == "" {
+		if r, err := f.Account(); err == nil && r.Account != nil && r.Account.Workspace != "" {
+			return r.Account.Workspace, nil
+		}
 	}
 	return "", cmdutil.NoInputError("a workspace", "-w or set REEARTH_CMS_WORKSPACE")
 }
@@ -49,6 +55,12 @@ func (o *globalOptions) requireWorkspace(f *core.Factory) (string, error) {
 // authenticated HTTP client. The SDK is given no token: it sets an empty
 // bearer header, which the authenticated client replaces.
 func (o *globalOptions) client(ctx context.Context, f *core.Factory) (*cmsapi.CMS, error) {
+	return o.clientWith(ctx, f, nil)
+}
+
+// clientWith is client with the authenticated HTTP client passed through
+// wrap, when wrap is not nil.
+func (o *globalOptions) clientWith(ctx context.Context, f *core.Factory, wrap func(*http.Client) *http.Client) (*cmsapi.CMS, error) {
 	ws, err := o.requireWorkspace(f)
 	if err != nil {
 		return nil, err
@@ -60,6 +72,9 @@ func (o *globalOptions) client(ctx context.Context, f *core.Factory) (*cmsapi.CM
 	hc, err := f.HTTPClient(ctx, Product{})
 	if err != nil {
 		return nil, err
+	}
+	if wrap != nil {
+		hc = wrap(hc)
 	}
 	base, err := f.BaseURL(Product{})
 	if err != nil {
@@ -119,8 +134,8 @@ func checkStatus(code int, body []byte, what string) error {
 		return nil
 	}
 	msg := strings.Join(strings.Fields(string(body)), " ")
-	if len(msg) > 200 {
-		msg = msg[:200] + "…"
+	if r := []rune(msg); len(r) > 200 {
+		msg = string(r[:200]) + "…"
 	}
 	if msg == "" {
 		msg = http.StatusText(code)
@@ -139,9 +154,50 @@ func unexpectedResponse(what string) error {
 // asset URLs. It carries no credentials, so the CMS token never leaves the
 // API, and no overall timeout, so large files are not cut off.
 func storageClient(f *core.Factory) *http.Client {
-	hc := *f.PublicHTTPClient()
-	hc.Timeout = 0
-	return &hc
+	return withoutTimeout(f.PublicHTTPClient())
+}
+
+// withoutTimeout returns a copy of hc with no overall timeout, for requests
+// that carry a file of any size.
+func withoutTimeout(hc *http.Client) *http.Client {
+	c := *hc
+	c.Timeout = 0
+	return &c
+}
+
+// withContentLength returns a copy of hc that sends request bodies with a
+// known length of size bytes. The SDK builds upload requests from an
+// io.Reader, which would otherwise go out chunked, and storage hosts such as
+// S3 reject chunked PUTs to signed URLs. A negative size, for a body of
+// unknown length, leaves hc as it is.
+func withContentLength(hc *http.Client, size int64) *http.Client {
+	if size < 0 {
+		return hc
+	}
+	c := *hc
+	next := c.Transport
+	if next == nil {
+		next = http.DefaultTransport
+	}
+	c.Transport = contentLengthTransport{next: next, size: size}
+	return &c
+}
+
+type contentLengthTransport struct {
+	next http.RoundTripper
+	size int64
+}
+
+func (t contentLengthTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	if req.Body == nil || req.Body == http.NoBody || req.ContentLength > 0 {
+		return t.next.RoundTrip(req)
+	}
+	r := req.Clone(req.Context())
+	r.ContentLength = t.size
+	if t.size == 0 {
+		r.Body = http.NoBody
+	}
+	return t.next.RoundTrip(r)
 }
 
 // reStatus finds the status code in an SDK error. The SDK reports a status

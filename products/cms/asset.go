@@ -67,7 +67,7 @@ func newCmdAssetList(f *core.Factory, o *globalOptions) *cobra.Command {
 			if res.JSON200 == nil {
 				return unexpectedResponse(what)
 			}
-			assets := deref(res.JSON200.Items)
+			assets := orEmpty(deref(res.JSON200.Items))
 
 			p, err := f.Printer()
 			if err != nil {
@@ -194,11 +194,17 @@ files. --direct sends it to the CMS API in the request instead.`,
 			if err != nil {
 				return err
 			}
-			c, err := o.client(cmd.Context(), f)
+			ctx := cmd.Context()
+			// --direct sends the file through the API client, so it must not
+			// be cut off by the API client's overall timeout.
+			var wrap func(*http.Client) *http.Client
+			if direct {
+				wrap = withoutTimeout
+			}
+			c, err := o.clientWith(ctx, f, wrap)
 			if err != nil {
 				return err
 			}
-			ctx := cmd.Context()
 
 			f.IO.StartProgress("Uploading the asset…")
 			var a *cmsapi.Asset
@@ -206,14 +212,14 @@ files. --direct sends it to the CMS API in the request instead.`,
 			case fromURL != "":
 				a, err = registerUpload(ctx, c, func() (string, error) { return c.UploadAsset(ctx, project, fromURL) })
 			case direct:
-				a, err = uploadFile(file, func(r io.Reader) (*cmsapi.Asset, error) {
+				a, err = uploadFile(file, func(r io.Reader, _ int64) (*cmsapi.Asset, error) {
 					return registerUpload(ctx, c, func() (string, error) {
 						return c.UploadAssetDirectly(ctx, project, filepath.Base(file), r)
 					})
 				})
 			default:
-				a, err = uploadFile(file, func(r io.Reader) (*cmsapi.Asset, error) {
-					return uploadSigned(ctx, f, c, project, filepath.Base(file), r)
+				a, err = uploadFile(file, func(r io.Reader, size int64) (*cmsapi.Asset, error) {
+					return uploadSigned(ctx, f, c, project, filepath.Base(file), r, size)
 				})
 			}
 			f.IO.StopProgress()
@@ -231,14 +237,27 @@ files. --direct sends it to the CMS API in the request instead.`,
 	return cmd
 }
 
-func uploadFile(path string, upload func(io.Reader) (*cmsapi.Asset, error)) (*cmsapi.Asset, error) {
-	fh, err := os.Open(path)
-	if err != nil {
-		return nil, &cmdutil.Error{Exit: cmdutil.ExitUsage, Code: "cms.file_unreadable", Err: err,
+// uploadFile opens the file at path and passes it to upload with its size,
+// or -1 when it is not a regular file (such as a pipe) and has none.
+func uploadFile(path string, upload func(r io.Reader, size int64) (*cmsapi.Asset, error)) (*cmsapi.Asset, error) {
+	unreadable := func(err error) error {
+		return &cmdutil.Error{Exit: cmdutil.ExitUsage, Code: "cms.file_unreadable", Err: err,
 			Message: err.Error(), Hint: "check the path given to -f"}
 	}
+	fh, err := os.Open(path)
+	if err != nil {
+		return nil, unreadable(err)
+	}
 	defer func() { _ = fh.Close() }()
-	return upload(fh)
+	st, err := fh.Stat()
+	if err != nil {
+		return nil, unreadable(err)
+	}
+	size := int64(-1)
+	if st.Mode().IsRegular() {
+		size = st.Size()
+	}
+	return upload(fh, size)
 }
 
 // registerUpload runs an upload that returns only the new asset's ID, and
@@ -256,12 +275,14 @@ func registerUpload(ctx context.Context, c *cmsapi.CMS, upload func() (string, e
 
 // uploadSigned uploads to a signed URL on the storage host, then registers
 // the upload as an asset.
-func uploadSigned(ctx context.Context, f *core.Factory, c *cmsapi.CMS, project, name string, r io.Reader) (*cmsapi.Asset, error) {
+func uploadSigned(ctx context.Context, f *core.Factory, c *cmsapi.CMS, project, name string, r io.Reader, size int64) (*cmsapi.Asset, error) {
 	up, err := c.CreateAssetUpload(ctx, project, name)
 	if err != nil {
 		return nil, apiError(err, "asset upload")
 	}
-	if err := c.WithHTTPClient(storageClient(f)).UploadToAssetUpload(ctx, up, r); err != nil {
+	// Signed URLs on hosts such as S3 need the length up front.
+	hc := withContentLength(storageClient(f), size)
+	if err := c.WithHTTPClient(hc).UploadToAssetUpload(ctx, up, r); err != nil {
 		return nil, &cmdutil.Error{Exit: cmdutil.ExitError, Code: "cms.upload_failed", Err: err,
 			Message: fmt.Sprintf("upload %s: %v", name, err)}
 	}
@@ -289,6 +310,10 @@ func newCmdAssetCat(f *core.Factory, o *globalOptions) *cobra.Command {
 	}
 }
 
+func writeFailed(err error) error {
+	return &cmdutil.Error{Exit: cmdutil.ExitError, Code: "cms.write_failed", Err: err, Message: err.Error()}
+}
+
 func newCmdAssetCp(f *core.Factory, o *globalOptions) *cobra.Command {
 	return &cobra.Command{
 		Use:     "cp <asset-id> <destination>",
@@ -301,18 +326,37 @@ func newCmdAssetCp(f *core.Factory, o *globalOptions) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			fh, err := os.Create(dest)
+			// Download next to dest and move it into place only on success,
+			// so a failed download never destroys an existing file.
+			fh, err := os.CreateTemp(filepath.Dir(dest), "."+filepath.Base(dest)+".*.tmp")
 			if err != nil {
-				return &cmdutil.Error{Exit: cmdutil.ExitError, Code: "cms.write_failed", Err: err, Message: err.Error()}
+				return writeFailed(err)
+			}
+			tmp := fh.Name()
+			// CreateTemp makes the file private; give it the mode an existing
+			// file has, or the usual one for a new file.
+			mode := os.FileMode(0o644)
+			if st, err := os.Stat(dest); err == nil {
+				mode = st.Mode().Perm()
+			}
+			if err := fh.Chmod(mode); err != nil {
+				_ = fh.Close()
+				_ = os.Remove(tmp)
+				return writeFailed(err)
 			}
 			f.IO.StartProgress("Downloading the asset…")
 			n, err := download(cmd.Context(), f, a, fh)
 			f.IO.StopProgress()
-			if cerr := fh.Close(); err == nil {
-				err = cerr
+			if cerr := fh.Close(); err == nil && cerr != nil {
+				err = writeFailed(cerr)
+			}
+			if err == nil {
+				if rerr := os.Rename(tmp, dest); rerr != nil {
+					err = writeFailed(rerr)
+				}
 			}
 			if err != nil {
-				_ = os.Remove(dest)
+				_ = os.Remove(tmp)
 				return err
 			}
 			p, err := f.Printer()

@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -185,12 +186,16 @@ func TestWorkspaceFallsBackToTheAccount(t *testing.T) {
 	api := newFakeServer(t, map[string]http.HandlerFunc{
 		"GET /api/{ws}/projects/{p}/models": reply(map[string]any{"models": []any{}}),
 	})
-	setup(t, api, envvar.Map{"REEARTH_CMS_WORKSPACE": ""})
-	cfg := "version: 1\nactive: me\naccounts:\n  me:\n    env: prod\n    kind: token\n    workspace: ws-account\n"
+	// The account authenticates the requests, not REEARTH_CMS_TOKEN.
+	setup(t, api, envvar.Map{"REEARTH_CMS_WORKSPACE": "", "REEARTH_CMS_TOKEN": ""})
+	cfg := "version: 1\nactive: me\naccounts:\n  me:\n    env: prod\n    kind: token\n    workspace: ws-account\n    insecure_storage: true\n"
 	if err := os.MkdirAll("config", 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join("config", "config.yaml"), []byte(cfg), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join("config", "credentials.json"), []byte(`{"me":{"kind":"token","token":"account-token"}}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if r := run(t, "cms", "model", "list"); r.code != 0 {
@@ -204,6 +209,30 @@ func TestWorkspaceFallsBackToTheAccount(t *testing.T) {
 	}
 	got := api.requests()
 	if len(got) != 2 || got[0].Path != "/api/ws-account/projects/proj/models" || got[1].Path != "/api/ws-shared/projects/proj/models" {
+		t.Fatalf("requests: %+v", got)
+	}
+	if got[0].Auth != "Bearer account-token" {
+		t.Fatalf("auth: %q", got[0].Auth)
+	}
+}
+
+// REEARTH_CMS_TOKEN may belong to another workspace than the account, so its
+// requests never take the account's workspace.
+func TestWorkspaceIgnoresTheAccountWithAToken(t *testing.T) {
+	api := newFakeServer(t, nil)
+	setup(t, api, envvar.Map{"REEARTH_CMS_WORKSPACE": ""})
+	cfg := "version: 1\nactive: me\naccounts:\n  me:\n    env: prod\n    kind: token\n    workspace: ws-account\n"
+	if err := os.MkdirAll("config", 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join("config", "config.yaml"), []byte(cfg), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	r := run(t, "cms", "model", "list")
+	if r.code != cmdutil.ExitUsage || !strings.Contains(r.errOut, "workspace") {
+		t.Fatalf("%+v", r)
+	}
+	if got := api.requests(); len(got) != 0 {
 		t.Fatalf("requests: %+v", got)
 	}
 }
@@ -401,6 +430,10 @@ func TestAssetFilesSkipTheToken(t *testing.T) {
 			if b, _ := io.ReadAll(r.Body); string(b) != "{}" {
 				t.Errorf("uploaded %q", b)
 			}
+			// Signed URLs on hosts such as S3 refuse chunked bodies.
+			if r.ContentLength != 2 || len(r.TransferEncoding) != 0 {
+				t.Errorf("upload length %d, transfer encoding %v", r.ContentLength, r.TransferEncoding)
+			}
 		},
 		"GET /files/a.geojson": func(w http.ResponseWriter, _ *http.Request) { _, _ = io.WriteString(w, "content") },
 	})
@@ -516,11 +549,13 @@ func TestAssetFailures(t *testing.T) {
 	storage := newFakeServer(t, map[string]http.HandlerFunc{
 		"PUT /upload":     status(http.StatusForbidden),
 		"GET /files/gone": status(http.StatusNotFound),
+		"GET /files/ok":   func(w http.ResponseWriter, _ *http.Request) { _, _ = io.WriteString(w, "new") },
 	})
 	api := newFakeServer(t, map[string]http.HandlerFunc{
 		"POST /api/ws1/projects/proj/assets/uploads": reply(map[string]any{"url": storage.srv.URL + "/upload", "token": "up1"}),
 		"GET /api/ws1/projects/proj/assets/gone":     reply(map[string]any{"id": "gone", "url": storage.srv.URL + "/files/gone"}),
 		"GET /api/ws1/projects/proj/assets/nourl":    reply(map[string]any{"id": "nourl"}),
+		"GET /api/ws1/projects/proj/assets/ok":       reply(map[string]any{"id": "ok", "url": storage.srv.URL + "/files/ok"}),
 	})
 	setup(t, api, nil)
 	if err := os.WriteFile("a.geojson", []byte("{}"), 0o644); err != nil {
@@ -547,6 +582,29 @@ func TestAssetFailures(t *testing.T) {
 	if _, err := os.Stat("out.geojson"); !os.IsNotExist(err) {
 		t.Errorf("out.geojson: %v", err)
 	}
+	// ...and keeps a file that was already there.
+	if err := os.WriteFile("keep.geojson", []byte("mine"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	if r := run(t, "cms", "asset", "cp", "gone", "keep.geojson"); r.code != cmdutil.ExitError {
+		t.Fatalf("cp over a file: %+v", r)
+	}
+	if b, _ := os.ReadFile("keep.geojson"); string(b) != "mine" {
+		t.Errorf("keep.geojson is now %q", b)
+	}
+	// A successful copy over it keeps its mode.
+	if r := run(t, "cms", "asset", "cp", "ok", "keep.geojson"); r.code != 0 {
+		t.Fatalf("cp ok: %+v", r)
+	}
+	if b, _ := os.ReadFile("keep.geojson"); string(b) != "new" {
+		t.Errorf("keep.geojson is %q", b)
+	}
+	if st, err := os.Stat("keep.geojson"); err != nil || (runtime.GOOS != "windows" && st.Mode().Perm() != 0o640) {
+		t.Errorf("keep.geojson mode: %v %v", st.Mode(), err)
+	}
+	if left, _ := filepath.Glob(".keep.geojson.*"); len(left) != 0 {
+		t.Errorf("temporary files left: %v", left)
+	}
 }
 
 func TestPaging(t *testing.T) {
@@ -559,7 +617,7 @@ func TestPaging(t *testing.T) {
 	setup(t, api, nil)
 
 	r := runTTY(t, "cms", "model", "list", "--per-page", "1")
-	if r.code != 0 || !strings.Contains(r.errOut, "page 1 of 3 models; pass --page 2 for the next") {
+	if r.code != 0 || !strings.Contains(r.errOut, "page 1 (3 models in all); pass --page 2 for the next") {
 		t.Fatalf("hint: %+v", r)
 	}
 	// Machines get no hint.

@@ -46,7 +46,8 @@ func newCmdItemList(f *core.Factory, o *globalOptions) *cobra.Command {
   $ reearth cms item list -m parks -p my-project --page 2
   $ reearth cms item list -m parks --keyword tokyo --sort updatedAt --dir desc
   $ reearth cms item list -m parks --ref public
-  $ reearth cms item list -m parks --asset --json=id,fields`,
+  $ reearth cms item list -m parks --asset --json=id,fields
+  $ reearth cms item list -m parks --asset=all --json=id,fields`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := lf.check(); err != nil {
@@ -68,7 +69,7 @@ func newCmdItemList(f *core.Factory, o *globalOptions) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return p.Print(res.Items, func() error {
+			return p.Print(orEmpty(res.Items), func() error {
 				if len(res.Items) == 0 {
 					f.IO.Info("No items found")
 					return nil
@@ -107,7 +108,7 @@ func newCmdItemList(f *core.Factory, o *globalOptions) *cobra.Command {
 	addModelFlag(cmd, &model)
 	lf.add(cmd)
 	cmd.Flags().StringVar(&ref, "ref", "", "Which version of the items: latest or public")
-	cmd.Flags().StringVar(&asset, "asset", "", "Include the data of referenced assets: true, or all for their files too")
+	cmd.Flags().StringVar(&asset, "asset", "", "Include the data of referenced assets: --asset, or --asset=all for their files too")
 	cmd.Flags().Lookup("asset").NoOptDefVal = "true"
 	return cmd
 }

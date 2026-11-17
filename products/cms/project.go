@@ -54,7 +54,7 @@ func newCmdProjectList(f *core.Factory, o *globalOptions) *cobra.Command {
 			if res.JSON200 == nil {
 				return unexpectedResponse(what)
 			}
-			projects := deref(res.JSON200.Projects)
+			projects := orEmpty(deref(res.JSON200.Projects))
 
 			p, err := f.Printer()
 			if err != nil {

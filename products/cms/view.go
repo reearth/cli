@@ -3,6 +3,7 @@ package cms
 import (
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/mattn/go-runewidth"
@@ -127,6 +128,9 @@ func formatValue(v any) string {
 	case map[string]any:
 		b, _ := json.Marshal(v)
 		s = string(b)
+	case float64:
+		// JSON numbers decode as float64; print them without an exponent.
+		s = strconv.FormatFloat(v, 'f', -1, 64)
 	default:
 		s = fmt.Sprint(v)
 	}
