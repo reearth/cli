@@ -219,6 +219,63 @@ func TestSkillsInstall(t *testing.T) {
 	}
 }
 
+// skillProduct is hello with skills, for testing product skills.
+type skillProduct struct{ hello.Product }
+
+func (skillProduct) Skills() []core.Skill {
+	return []core.Skill{
+		{Name: "hello-b", Short: "Second", Content: "---\nname: reearth-hello-b\n---\nB\n"},
+		{Name: "hello-a", Short: "First", Content: "---\nname: reearth-hello-a\n---\nA\n"},
+	}
+}
+
+func TestSkillsProduct(t *testing.T) {
+	setup(t)
+	o := app.Options{Name: "reearth", Products: []core.Product{skillProduct{}}}
+	dir := t.TempDir()
+	read := func(name string) string {
+		b, _ := os.ReadFile(filepath.Join(dir, name, "SKILL.md"))
+		return string(b)
+	}
+
+	// By name: only that skill, into reearth-<name>.
+	if r := run(t, o, "", nil, "skills", "install", "hello-a", "--dir", dir); r.code != 0 {
+		t.Fatalf("%+v", r)
+	}
+	if !strings.Contains(read("reearth-hello-a"), "A") || read("reearth-hello-b") != "" || read("reearth") != "" {
+		t.Fatal("install hello-a wrote the wrong skills")
+	}
+
+	// Without a name: the CLI skill, and an update of the product skills
+	// installed there, but no new ones.
+	if err := os.WriteFile(filepath.Join(dir, "reearth-hello-a", "SKILL.md"), []byte("old"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if r := run(t, o, "", nil, "skills", "install", "--dir", dir); r.code != 0 {
+		t.Fatalf("%+v", r)
+	}
+	if read("reearth") == "" || !strings.Contains(read("reearth-hello-a"), "A") || read("reearth-hello-b") != "" {
+		t.Fatalf("install without a name: reearth=%q hello-a=%q hello-b=%q", read("reearth"), read("reearth-hello-a"), read("reearth-hello-b"))
+	}
+
+	if r := run(t, o, "", nil, "skills", "install", "hello-b", "--print"); r.code != 0 || r.out != "---\nname: reearth-hello-b\n---\nB\n" {
+		t.Fatalf("--print hello-b = %+v", r)
+	}
+	if r := run(t, o, "", nil, "skills", "install", "hello-a", "hello-b", "--print"); r.code != cmdutil.ExitUsage {
+		t.Fatalf("--print with two names = %+v", r)
+	}
+	if r := run(t, o, "", nil, "skills", "install", "nope", "--dir", dir); r.code != cmdutil.ExitUsage || !strings.Contains(r.errOut, "available: hello-a, hello-b") {
+		t.Fatalf("unknown skill = %+v", r)
+	}
+
+	if r := run(t, o, "", nil, "skills", "list", "--jq", ".[].name"); r.code != 0 || r.out != "hello-a\nhello-b\n" {
+		t.Fatalf("list = %+v", r)
+	}
+	if r := run(t, unified, "", nil, "skills", "list", "--json"); r.code != 0 || strings.TrimSpace(r.out) != "[]" {
+		t.Fatalf("list without product skills = %+v", r)
+	}
+}
+
 func TestHelpTopics(t *testing.T) {
 	setup(t)
 	r := run(t, unified, "", nil, "help", "exit-codes")

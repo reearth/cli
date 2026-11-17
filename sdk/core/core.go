@@ -42,6 +42,25 @@ type APIProduct interface {
 	BaseURL(env *auth.Env) string
 }
 
+// Skill is an agent skill (a SKILL.md) for building on a product, such as
+// writing Visualizer plugins. `skills install <name>` installs it.
+type Skill struct {
+	// Name is what `skills install` takes, e.g. "visualizer-plugin". The
+	// skill is written to reearth-<name>/SKILL.md, so the name in its
+	// frontmatter must be reearth-<name>.
+	Name string
+	// Short is a one-line description for `skills list`.
+	Short string
+	// Content is the SKILL.md.
+	Content string
+}
+
+// SkillProduct is implemented by products that ship agent skills.
+type SkillProduct interface {
+	Product
+	Skills() []Skill
+}
+
 // GlobalFlags are the persistent flags shared by every command.
 type GlobalFlags struct {
 	Account string

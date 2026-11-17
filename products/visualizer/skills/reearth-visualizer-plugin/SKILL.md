@@ -287,7 +287,7 @@ reearth.data.clientStorage.setAsync("theme", "dark")
 
 ## Checking and packing with the Re:Earth CLI
 
-If the `reearth` CLI is installed, it can check a plugin and build the `.zip`. Find the commands with `reearth search "validate a plugin"` and `reearth search "zip a plugin for upload"`, then read their `--help`.
+The `reearth` CLI can check a plugin and build the `.zip`. Find the commands with `reearth search "validate a plugin"` and `reearth search "zip a plugin for upload"`, then read their `--help`.
 
 - The validate command checks `reearth.yml` the way Visualizer reads an upload. In testing it reported a schema field without `title` (`… .title is required`) and the plugin id `reearth` (`"reearth" is reserved`). Visualizer itself installs the first without complaint (the input just has no label) and rejects the second with an unclear message, so run validate before every upload.
 - The pack command validates first and does not pack a plugin with problems. Over the size limit it fails with `the package would be <size>; Visualizer accepts up to 10.0 MB`.
@@ -302,5 +302,5 @@ If the `reearth` CLI is installed, it can check a plugin and build the `.zip`. F
 - [ ] Every backslash in the iframe code inside the `reearth.ui.show` template literal is doubled (`\\`).
 - [ ] Every `layers.add` has an appearance key (`marker` for points, `polyline` for lines).
 - [ ] The UI sets a background, a text color, and an explicit width.
-- [ ] If the `reearth` CLI is installed, its validate command passes.
+- [ ] The `reearth` CLI's validate command passes.
 - [ ] Anything used that isn't in this file was checked against its `api-reference/` page. Tell the user which parts you could not confirm.

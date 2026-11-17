@@ -35,7 +35,7 @@ Run `reearth upgrade` to update. If you installed with a package manager, the co
 | `reearth search "<task>"` | Find the command for a task |
 | `reearth docs search/read` | Search and read the documentation at docs.reearth.io |
 | `reearth help <topic>` | Read about output formats, exit codes and environment variables |
-| `reearth skills install` | Install the skill that teaches coding agents to use the CLI |
+| `reearth skills install [name]` / `list` | Install agent skills: the one for using the CLI, or a product skill such as `visualizer-plugin` |
 | `reearth extension install/list/exec` | Manage extensions |
 | `reearth doctor` | Diagnose configuration, the keyring, the network and the installation |
 | `reearth upgrade` | Update the CLI |
@@ -44,17 +44,16 @@ Global flags: `--account`, `--json[=fields]`, `--jq`, `-o table|plain|json|yaml|
 
 Credentials are stored in the OS keyring (macOS Keychain, Windows Credential Manager, or Secret Service). On machines without a keyring, pass `--insecure-storage`. For CI, set `REEARTH_TOKEN`.
 
-## Agent skills for product development
+## Agent skills
 
-`reearth skills install` installs the skill for using this CLI. Skills for building on the products are in [`skills/`](skills/). They are not installed by default; install the ones you need with [`npx skills`](https://www.npmjs.com/package/skills), which asks whether to install for the current project or for every project:
-
-| Skill | Use it to |
-|---|---|
-| `reearth-visualizer-plugin` | Build, edit and debug Re:Earth Visualizer plugins |
+`reearth skills install` installs the skill that teaches coding agents to use this CLI. Skills for building on the products are not installed by default; install the ones you need by name:
 
 ```sh
-npx skills add reearth/cli --skill reearth-visualizer-plugin
+reearth skills list                        # the product skills you can install
+reearth skills install visualizer-plugin   # build, edit and debug Visualizer plugins
 ```
+
+Skills go to `~/.claude/skills/`. Use `--agent agents` for `~/.agents/skills/`, and `--project` to install into the current directory instead. After `reearth upgrade`, run `reearth skills install` again, with the same `--agent`, `--project` or `--dir` you installed with, to update your skills.
 
 ## Contributing
 
