@@ -224,10 +224,15 @@ type skillProduct struct{ hello.Product }
 
 func (skillProduct) Skills() []core.Skill {
 	return []core.Skill{
-		{Name: "hello-b", Short: "Second", Content: "---\nname: reearth-hello-b\n---\nB\n"},
-		{Name: "hello-a", Short: "First", Content: "---\nname: reearth-hello-a\n---\nA\n"},
+		{Name: "hello-b", Short: "Second", Content: skillB},
+		{Name: "hello-a", Short: "First", Content: skillA},
 	}
 }
+
+const (
+	skillA = "---\nname: reearth-hello-a\n---\nA\n"
+	skillB = "---\nname: reearth-hello-b\n---\nB\n"
+)
 
 func TestSkillsProduct(t *testing.T) {
 	setup(t)
@@ -242,7 +247,7 @@ func TestSkillsProduct(t *testing.T) {
 	if r := run(t, o, "", nil, "skills", "install", "hello-a", "--dir", dir); r.code != 0 {
 		t.Fatalf("%+v", r)
 	}
-	if !strings.Contains(read("reearth-hello-a"), "A") || read("reearth-hello-b") != "" || read("reearth") != "" {
+	if read("reearth-hello-a") != skillA || read("reearth-hello-b") != "" || read("reearth") != "" {
 		t.Fatal("install hello-a wrote the wrong skills")
 	}
 
@@ -254,11 +259,11 @@ func TestSkillsProduct(t *testing.T) {
 	if r := run(t, o, "", nil, "skills", "install", "--dir", dir); r.code != 0 {
 		t.Fatalf("%+v", r)
 	}
-	if read("reearth") == "" || !strings.Contains(read("reearth-hello-a"), "A") || read("reearth-hello-b") != "" {
+	if read("reearth") == "" || read("reearth-hello-a") != skillA || read("reearth-hello-b") != "" {
 		t.Fatalf("install without a name: reearth=%q hello-a=%q hello-b=%q", read("reearth"), read("reearth-hello-a"), read("reearth-hello-b"))
 	}
 
-	if r := run(t, o, "", nil, "skills", "install", "hello-b", "--print"); r.code != 0 || r.out != "---\nname: reearth-hello-b\n---\nB\n" {
+	if r := run(t, o, "", nil, "skills", "install", "hello-b", "--print"); r.code != 0 || r.out != skillB {
 		t.Fatalf("--print hello-b = %+v", r)
 	}
 	if r := run(t, o, "", nil, "skills", "install", "hello-a", "hello-b", "--print"); r.code != cmdutil.ExitUsage {

@@ -28,7 +28,7 @@ func TestSkills(t *testing.T) {
 			t.Errorf("skills/%s: %v", e.Name(), err)
 			continue
 		}
-		m := regexp.MustCompile(`\A---\nname: (\S+)\n`).FindStringSubmatch(string(b))
+		m := regexp.MustCompile(`\A---\r?\nname: (\S+)\r?\n`).FindStringSubmatch(string(b)) // a Windows checkout has CRLF
 		if m == nil || m[1] != e.Name() {
 			t.Errorf("skills/%s/SKILL.md: frontmatter name = %v, want %s", e.Name(), m, e.Name())
 		}
