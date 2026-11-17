@@ -6,9 +6,11 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -125,7 +127,7 @@ func TestLoopbackLoginUsesPKCE(t *testing.T) {
 		if q.Get("audience") != "https://api.test" {
 			t.Errorf("audience = %q", q.Get("audience"))
 		}
-		if !strings.HasPrefix(q.Get("redirect_uri"), "http://localhost:") {
+		if !strings.HasPrefix(q.Get("redirect_uri"), "http://127.0.0.1:") {
 			t.Errorf("redirect_uri = %q", q.Get("redirect_uri"))
 		}
 		fa.mu.Lock()
@@ -141,6 +143,7 @@ func TestLoopbackLoginUsesPKCE(t *testing.T) {
 		return nil
 	}
 
+	withDefaultLoopbackPorts(t, freePorts(t, 1))
 	tok, err := Login(context.Background(), LoginOptions{Env: fa.env(), Flow: FlowLoopback, IO: ios, OpenBrowser: open, Timeout: 10 * time.Second})
 	if err != nil {
 		t.Fatal(err)
@@ -169,6 +172,7 @@ func TestLoopbackIgnoresStateMismatch(t *testing.T) {
 		}()
 		return nil
 	}
+	withDefaultLoopbackPorts(t, freePorts(t, 1))
 	_, err := Login(context.Background(), LoginOptions{Env: fa.env(), Flow: FlowLoopback, IO: ios, OpenBrowser: open, Timeout: 10 * time.Second})
 	if err == nil || !strings.Contains(err.Error(), "access_denied") || strings.Contains(err.Error(), "forged") || strings.Contains(err.Error(), "\x1b") {
 		t.Fatalf("err = %q", err)
@@ -382,5 +386,74 @@ func TestDetectFlow(t *testing.T) {
 		if got := DetectFlow(c.env(), c.web, c.dev); got != c.want {
 			t.Errorf("%s: got %s, want %s", c.name, got, c.want)
 		}
+	}
+}
+
+// freePorts returns n distinct ports that were free on 127.0.0.1 a moment ago.
+func freePorts(t *testing.T, n int) []int {
+	t.Helper()
+	var ports []int
+	for range n {
+		ln, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer ln.Close()
+		ports = append(ports, ln.Addr().(*net.TCPAddr).Port)
+	}
+	return ports
+}
+
+func withDefaultLoopbackPorts(t *testing.T, ports []int) {
+	t.Helper()
+	old := DefaultLoopbackPorts
+	DefaultLoopbackPorts = ports
+	t.Cleanup(func() { DefaultLoopbackPorts = old })
+}
+
+func TestListenLoopbackSkipsBusyDefaultPorts(t *testing.T) {
+	ports := freePorts(t, 2)
+	withDefaultLoopbackPorts(t, ports)
+	busy, err := net.Listen("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(ports[0])))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer busy.Close()
+
+	ln, err := listenLoopback("127.0.0.1", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	if got := ln.Addr().(*net.TCPAddr).Port; got != ports[1] {
+		t.Fatalf("port = %d, want %d", got, ports[1])
+	}
+}
+
+func TestListenLoopbackAllBusy(t *testing.T) {
+	ports := freePorts(t, 1)
+	withDefaultLoopbackPorts(t, ports)
+	busy, err := net.Listen("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(ports[0])))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer busy.Close()
+
+	if _, err := listenLoopback("127.0.0.1", 0); !errors.Is(err, errLoopbackUnavailable) {
+		t.Fatalf("err = %v, want errLoopbackUnavailable", err)
+	}
+}
+
+func TestListenLoopbackConfiguredPortOnly(t *testing.T) {
+	ports := freePorts(t, 2)
+	withDefaultLoopbackPorts(t, ports[:1])
+
+	ln, err := listenLoopback("127.0.0.1", ports[1])
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	if got := ln.Addr().(*net.TCPAddr).Port; got != ports[1] {
+		t.Fatalf("port = %d, want %d", got, ports[1])
 	}
 }
