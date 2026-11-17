@@ -87,7 +87,7 @@ Each command resolves its account in this order: `--account`, `REEARTH_TOKEN` (a
 
 An Auth0 access token is valid for a single audience, but each product server currently uses its own audience. The plan is a common Re:Earth API audience, accepted by every product server alongside the audience it already uses. This requires coordination with each product team. Until then, token caches are keyed by audience so that a product can use its own audience if needed.
 
-The CMS integration API does not yet accept user JWTs (it has no JWT middleware), so the CMS product starts with token accounts that use integration tokens.
+The CMS integration API accepts both user JWTs and integration tokens, so the CMS product works with a signed-in account or a token account.
 
 ## Output conventions
 
