@@ -207,7 +207,7 @@ func TestProjectListAPIErrorsMapToExitCodes(t *testing.T) {
 
 // People reading a terminal see what each status means; piped output and
 // --json keep the API's value, so scripts see the same word.
-func TestProjectListPublishStatusLabel(t *testing.T) {
+func TestProjectPublishStatusLabel(t *testing.T) {
 	api := newFakeAPI(t, map[string]http.HandlerFunc{
 		"GET /workspaces/ws1/projects": func(w http.ResponseWriter, _ *http.Request) {
 			writeJSON(w, 200, map[string]any{"items": []any{projectJSON("p1", "Parks")}, "totalCount": 1})
