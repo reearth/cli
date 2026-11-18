@@ -278,7 +278,11 @@ func printProject(f *core.Factory, pr *project) error {
 		row("workspace", pr.WorkspaceID)
 		row("scene", pr.SceneID)
 		row("visibility", pr.Visibility)
-		row("publish status", publishStatusLabel(pr.PublishmentStatus))
+		status := pr.PublishmentStatus
+		if p.IsHuman() {
+			status = publishStatusLabel(status)
+		}
+		row("publish status", status)
 		if pr.ImportStatus != "" && pr.ImportStatus != "SUCCESS" {
 			row("import", pr.ImportStatus)
 			row("import error", pr.ImportError)
