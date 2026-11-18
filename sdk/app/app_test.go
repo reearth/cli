@@ -263,20 +263,46 @@ func TestSkillsProduct(t *testing.T) {
 		t.Fatalf("install without a name: reearth=%q hello-a=%q hello-b=%q", read("reearth"), read("reearth-hello-a"), read("reearth-hello-b"))
 	}
 
+	// The CLI skill by its name: only that skill, with no update of the
+	// product skills; with a product skill, both.
+	cli := run(t, o, "", nil, "skills", "install", "--print")
+	if r := run(t, o, "", nil, "skills", "install", "reearth", "--print"); r.code != 0 || cli.code != 0 || r.out != cli.out {
+		t.Fatalf("--print reearth = %+v, want %+v", r, cli)
+	}
+	dir = t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "reearth-hello-a"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "reearth-hello-a", "SKILL.md"), []byte("old"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if r := run(t, o, "", nil, "skills", "install", "reearth", "--dir", dir); r.code != 0 {
+		t.Fatalf("%+v", r)
+	}
+	if read("reearth") != cli.out || read("reearth-hello-a") != "old" {
+		t.Fatalf("install reearth: reearth=%q hello-a=%q", read("reearth"), read("reearth-hello-a"))
+	}
+	if r := run(t, o, "", nil, "skills", "install", "reearth", "hello-b", "--dir", dir); r.code != 0 {
+		t.Fatalf("%+v", r)
+	}
+	if read("reearth") != cli.out || read("reearth-hello-b") != skillB {
+		t.Fatalf("install reearth hello-b: reearth=%q hello-b=%q", read("reearth"), read("reearth-hello-b"))
+	}
+
 	if r := run(t, o, "", nil, "skills", "install", "hello-b", "--print"); r.code != 0 || r.out != skillB {
 		t.Fatalf("--print hello-b = %+v", r)
 	}
 	if r := run(t, o, "", nil, "skills", "install", "hello-a", "hello-b", "--print"); r.code != cmdutil.ExitUsage {
 		t.Fatalf("--print with two names = %+v", r)
 	}
-	if r := run(t, o, "", nil, "skills", "install", "nope", "--dir", dir); r.code != cmdutil.ExitUsage || !strings.Contains(r.errOut, "available: hello-a, hello-b") {
+	if r := run(t, o, "", nil, "skills", "install", "nope", "--dir", dir); r.code != cmdutil.ExitUsage || !strings.Contains(r.errOut, "available: reearth, hello-a, hello-b") {
 		t.Fatalf("unknown skill = %+v", r)
 	}
 
-	if r := run(t, o, "", nil, "skills", "list", "--jq", ".[].name"); r.code != 0 || r.out != "hello-a\nhello-b\n" {
+	if r := run(t, o, "", nil, "skills", "list", "--jq", ".[].name"); r.code != 0 || r.out != "reearth\nhello-a\nhello-b\n" {
 		t.Fatalf("list = %+v", r)
 	}
-	if r := run(t, unified, "", nil, "skills", "list", "--json"); r.code != 0 || strings.TrimSpace(r.out) != "[]" {
+	if r := run(t, unified, "", nil, "skills", "list", "--jq", ".[] | [.name, .product] | join(\",\")"); r.code != 0 || r.out != "reearth,\n" {
 		t.Fatalf("list without product skills = %+v", r)
 	}
 }

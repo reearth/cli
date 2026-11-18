@@ -46,11 +46,12 @@ Credentials are stored in the OS keyring (macOS Keychain, Windows Credential Man
 
 ## Agent skills
 
-`reearth skills install` installs the skill that teaches coding agents to use this CLI. Skills for building on the products are not installed by default; install the ones you need by name:
+`reearth skills install` installs the skill that teaches coding agents to use this CLI, named `reearth`. Skills for building on the products are not installed by default; install the ones you need by name:
 
 ```sh
-reearth skills list                        # the product skills you can install
-reearth skills install visualizer-plugin   # build, edit and debug Visualizer plugins
+reearth skills list                                # the skills you can install
+reearth skills install visualizer-plugin           # build, edit and debug Visualizer plugins
+reearth skills install reearth visualizer-plugin   # both
 ```
 
 Skills go to `~/.claude/skills/`. Use `--agent agents` for `~/.agents/skills/`, and `--project` to install into the current directory instead. After `reearth upgrade`, run `reearth skills install` again, with the same `--agent`, `--project` or `--dir` you installed with, to update your skills.

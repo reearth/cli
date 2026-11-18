@@ -859,7 +859,7 @@
   {
     "path": "reearth skills install",
     "usage": "reearth skills install [name...] [flags]",
-    "short": "Install an agent skill (SKILL.md)",
+    "short": "Install agent skills (SKILL.md)",
     "runnable": true,
     "flags": [
       {
@@ -888,7 +888,7 @@
   {
     "path": "reearth skills list",
     "usage": "reearth skills list [flags]",
-    "short": "List the product skills you can install",
+    "short": "List the agent skills you can install",
     "runnable": true
   },
   {
