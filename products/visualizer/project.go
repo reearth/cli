@@ -169,10 +169,14 @@ Projects in the trash are left out unless --deleted is set. --keyword and
 					return nil
 				}
 				cs := f.IO.Color()
-				t := p.Table("ID", "NAME", "PUBLISHED", "UPDATED")
+				t := p.Table("ID", "NAME", "PUBLISH STATUS", "UPDATED")
 				for _, pr := range res.Items {
 					// Full IDs: they are what view, edit and delete take.
-					t.Row(pr.ID, pr.Name, pr.PublishmentStatus, output.Cell{Text: p.Time(pr.UpdatedAt), Style: cs.Dim})
+					status := pr.PublishmentStatus
+					if p.IsHuman() {
+						status = publishStatusLabel(status)
+					}
+					t.Row(pr.ID, pr.Name, status, output.Cell{Text: p.Time(pr.UpdatedAt), Style: cs.Dim})
 				}
 				if err := t.Render(); err != nil {
 					return err
@@ -274,7 +278,11 @@ func printProject(f *core.Factory, pr *project) error {
 		row("workspace", pr.WorkspaceID)
 		row("scene", pr.SceneID)
 		row("visibility", pr.Visibility)
-		row("published", pr.PublishmentStatus)
+		status := pr.PublishmentStatus
+		if p.IsHuman() {
+			status = publishStatusLabel(status)
+		}
+		row("publish status", status)
 		if pr.ImportStatus != "" && pr.ImportStatus != "SUCCESS" {
 			row("import", pr.ImportStatus)
 			row("import error", pr.ImportError)
@@ -490,6 +498,8 @@ and print the published URL.
 Anyone with the URL can view a published project. By default it is published
 as "limited": search engines are asked not to index it, as with the web app's
 default. --index publishes it as "public" so that search engines may index it.
+"unpublish" sets it to "private", which means not published. This status is
+unrelated to the project's visibility.
 
 --alias sets the published alias, which names the published URL. It is kept
 when omitted; a project published for the first time gets "c-<scene-id>".`,
@@ -515,8 +525,8 @@ func newCmdProjectUnpublish(f *core.Factory) *cobra.Command {
 		Use:   "unpublish <project-id>",
 		Short: "Take a published project offline",
 		Long: `Take a published project offline. Its published alias is kept, so
-publishing it again brings back the same URL. Asks for confirmation unless
---yes is passed.`,
+publishing it again brings back the same URL. Its status becomes "private",
+which means not published. Asks for confirmation unless --yes is passed.`,
 		Example: `  $ reearth vis project unpublish 01hq...`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id := args[0]
@@ -526,6 +536,21 @@ publishing it again brings back the same URL. Asks for confirmation unless
 			return publishProject(cmd, f, []string{id}, "private", "")
 		},
 	}
+}
+
+// publishStatusLabel adds a short meaning to a publish status for people
+// reading the output. It keeps the API's value first, so the table, --json
+// and `reearth api` all show the same word.
+func publishStatusLabel(s string) string {
+	switch s {
+	case "public":
+		return "public (published, indexed)"
+	case "limited":
+		return "limited (published, not indexed)"
+	case "private":
+		return "private (unpublished)"
+	}
+	return s
 }
 
 func publishProject(cmd *cobra.Command, f *core.Factory, args []string, status, alias string) error {
@@ -559,7 +584,7 @@ func publishProject(cmd *cobra.Command, f *core.Factory, args []string, status, 
 			f.IO.Success("Unpublished %s", res.Project.Name)
 			return nil
 		}
-		f.IO.Success("Published %s (%s)", res.Project.Name, status)
+		f.IO.Success("Published %s: %s", res.Project.Name, publishStatusLabel(status))
 		if res.URL == "" {
 			f.IO.Warn("the server did not return a URL (no published host configured); the published alias is %s", res.Project.PublishedAlias)
 			return nil

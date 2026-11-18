@@ -204,3 +204,33 @@ func TestProjectListAPIErrorsMapToExitCodes(t *testing.T) {
 		t.Fatalf("json error: %q", r.errOut)
 	}
 }
+
+// People reading a terminal see what each status means; piped output and
+// --json keep the API's value, so scripts see the same word.
+func TestProjectPublishStatusLabel(t *testing.T) {
+	api := newFakeAPI(t, map[string]http.HandlerFunc{
+		"GET /workspaces/ws1/projects": func(w http.ResponseWriter, _ *http.Request) {
+			writeJSON(w, 200, map[string]any{"items": []any{projectJSON("p1", "Parks")}, "totalCount": 1})
+		},
+		"GET /projects/p1": func(w http.ResponseWriter, _ *http.Request) {
+			writeJSON(w, 200, projectJSON("p1", "Parks"))
+		},
+	})
+	setupAPI(t, api, envvar.Map{"REEARTH_VISUALIZER_WORKSPACE": "ws1"})
+
+	if r := runTTY(t, "\n", "vis", "project", "view", "p1"); r.code != 0 || !strings.Contains(r.out, "private (unpublished)") {
+		t.Fatalf("view terminal: %+v", r)
+	}
+	if r := run(t, "vis", "project", "view", "p1"); r.code != 0 || strings.Contains(r.out, "unpublished") || !strings.Contains(r.out, "private") {
+		t.Fatalf("view piped: %+v", r)
+	}
+	if r := runTTY(t, "\n", "vis", "project", "list"); r.code != 0 || !strings.Contains(r.out, "private (unpublished)") {
+		t.Fatalf("terminal: %+v", r)
+	}
+	if r := run(t, "vis", "project", "list"); r.code != 0 || strings.Contains(r.out, "unpublished") {
+		t.Fatalf("piped: %+v", r)
+	}
+	if r := run(t, "vis", "project", "list", "--json"); r.code != 0 || !strings.Contains(r.out, `"publishmentStatus":"private"`) && !strings.Contains(r.out, `"publishmentStatus": "private"`) {
+		t.Fatalf("json: %+v", r)
+	}
+}
