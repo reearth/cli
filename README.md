@@ -35,7 +35,7 @@ Run `reearth upgrade` to update. If you installed with a package manager, the co
 | `reearth search "<task>"` | Find the command for a task |
 | `reearth docs search/read` | Search and read the documentation at docs.reearth.io |
 | `reearth help <topic>` | Read about output formats, exit codes and environment variables |
-| `reearth skills install` | Install the skill that teaches coding agents to use the CLI |
+| `reearth skills install [name]` / `list` | Install agent skills: the one for using the CLI, or a product skill such as `visualizer-plugin` |
 | `reearth extension install/list/exec` | Manage extensions |
 | `reearth doctor` | Diagnose configuration, the keyring, the network and the installation |
 | `reearth upgrade` | Update the CLI |
@@ -43,6 +43,18 @@ Run `reearth upgrade` to update. If you installed with a package manager, the co
 Global flags: `--account`, `--json[=fields]`, `--jq`, `-o table|plain|json|yaml|ndjson`, `--yes`, `--no-input`, `--no-color`, `--quiet`, `--debug`.
 
 Credentials are stored in the OS keyring (macOS Keychain, Windows Credential Manager, or Secret Service). On machines without a keyring, pass `--insecure-storage`. For CI, set `REEARTH_TOKEN`.
+
+## Agent skills
+
+`reearth skills install` installs the skill that teaches coding agents to use this CLI, named `reearth`. Skills for building on the products are not installed by default; install the ones you need by name:
+
+```sh
+reearth skills list                                # the skills you can install
+reearth skills install visualizer-plugin           # build, edit and debug Visualizer plugins
+reearth skills install reearth visualizer-plugin   # both
+```
+
+Skills go to `~/.claude/skills/`. Use `--agent agents` for `~/.agents/skills/`, and `--project` to install into the current directory instead. After `reearth upgrade`, run `reearth skills install` again, with the same `--agent`, `--project` or `--dir` you installed with, to update your skills.
 
 ## Contributing
 

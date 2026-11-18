@@ -29,10 +29,11 @@ sdk/                 the library that products build on
   envvar/            the one way to read environment variables; envvartest fakes them in tests
   output/ iostreams/ rendering, TTY / agent / CI detection, colors, spinners
   httpx/             authenticated HTTP transport with retries and debug traces
-  skills/            the SKILL.md that `skills install` writes
+  skills/            the SKILL.md for using the CLI, which `skills install` writes
   cmdtree/           the command tree as data: search, surface snapshot, description lint
   docs/              docs.reearth.io through llms-full.txt: download, cache, page split, search
 products/<name>/     product commands
+  skills/reearth-<skill>/ agent skills for building on the product (SKILL.md), embedded in the binary
 internal/            features of the distributed binary only: self-update, extensions
 docs/                GitHub Pages (install.sh, served at cli.reearth.io)
 ```
@@ -117,7 +118,8 @@ Agents learn the CLI from the CLI itself. There are no separate docs to keep in 
 - Knowledge that belongs to no single command is a help topic (`reearth help exit-codes`): a text file in `sdk/corecmd/topics/` registered in `topics.go`. Write `{{app}}` for the binary name.
 - Knowledge about the products themselves, such as what a reference field is, lives at docs.reearth.io. `reearth docs search` and `docs read` read it through the site's `llms-full.txt` (`sdk/docs`), so do not copy it into `Long`; link the page instead.
 - `reearth docs read` takes an id or a title. Ids are page URL paths when the site publishes page URLs, and titles otherwise; then pages that share a title get numbered ids (`概要 (1)`, `概要 (2)`), so every id names one page. A title that several pages share is ambiguous and exits with 2, listing the ids. The numbers follow the order of `llms-full.txt`, so they can change when pages are added; page URLs work once the site publishes them.
-- `SKILL.md` (`sdk/skills/SKILL.md.tmpl`) holds only what outlives a release: how to find commands, and the rules for output, prompts, login and `--yes`. It names no product or command flags, only global ones that are part of the CLI's stable contract (`--json`, `--jq`, `--yes`, `--help`), so an old installed copy never teaches outdated ones. The help topics it names are checked against `topics.go` by a test.
+- `SKILL.md` (`sdk/skills/SKILL.md.tmpl`) holds only what outlives a release: how to find commands and product skills, and the rules for output, prompts, login and `--yes`. It names no product or command flags, only global ones that are part of the CLI's stable contract (`--json`, `--jq`, `--yes`, `--help`), so an old installed copy never teaches outdated ones. The help topics it names are checked against `topics.go` by a test.
+- Product skills teach agents to build on a product, such as writing Visualizer plugins. Each is a `SKILL.md` in `products/<name>/skills/reearth-<skill>/`, embedded with `go:embed` and returned by the product's `Skills()` (`core.SkillProduct`). `reearth skills install <skill>` writes it to a folder of the same name, `reearth-<skill>/`, and `skills list` lists them after the CLI skill, which `skills install reearth` also installs by name. The `name` in its frontmatter must be the folder name, `reearth-<skill>`; a test checks this. `skills install` without a name updates the product skills already installed in the same place, and `upgrade` reminds users to run it. A product skill may quote CLI messages and `reearth search` queries; tests check each one against the current build (`products/visualizer/skills_test.go`, `TestSkillSearches` in `cmd/reearth/main_test.go`), so add a check when you add a quote.
 
 ## Command descriptions and the command surface
 
@@ -162,11 +164,13 @@ Extensions follow the `gh extension` model with tighter rules. Binaries named `r
 
 3. Explain the product's concepts, such as how projects, models and items relate, in the `Long` of its root command. Agents read it with `--help`, and `search` uses it to rank the product's commands.
 
-4. Register the product in `cmd/reearth/main.go`. Optionally, add `cmd/reearth-<name>/main.go`, which contains only `app.Main(<name>.Product{})`.
+4. Optionally, ship agent skills for building on the product by implementing `core.SkillProduct`; see [Docs for agents](#docs-for-agents).
 
-5. Write examples as `$ reearth <product> ...`. They are rewritten automatically for the standalone binary.
+5. Register the product in `cmd/reearth/main.go`. Optionally, add `cmd/reearth-<name>/main.go`, which contains only `app.Main(<name>.Product{})`.
 
-6. Add tests. `sdk/app/app_test.go` shows how to run commands end to end against fake servers, and `products/hello` is a minimal reference product.
+6. Write examples as `$ reearth <product> ...`. They are rewritten automatically for the standalone binary.
+
+7. Add tests. `sdk/app/app_test.go` shows how to run commands end to end against fake servers, and `products/hello` is a minimal reference product.
 
 ## Development
 

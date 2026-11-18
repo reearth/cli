@@ -219,6 +219,94 @@ func TestSkillsInstall(t *testing.T) {
 	}
 }
 
+// skillProduct is hello with skills, for testing product skills.
+type skillProduct struct{ hello.Product }
+
+func (skillProduct) Skills() []core.Skill {
+	return []core.Skill{
+		{Name: "hello-b", Short: "Second", Content: skillB},
+		{Name: "hello-a", Short: "First", Content: skillA},
+	}
+}
+
+const (
+	skillA = "---\nname: reearth-hello-a\n---\nA\n"
+	skillB = "---\nname: reearth-hello-b\n---\nB\n"
+)
+
+func TestSkillsProduct(t *testing.T) {
+	setup(t)
+	o := app.Options{Name: "reearth", Products: []core.Product{skillProduct{}}}
+	dir := t.TempDir()
+	read := func(name string) string {
+		b, _ := os.ReadFile(filepath.Join(dir, name, "SKILL.md"))
+		return string(b)
+	}
+
+	// By name: only that skill, into reearth-<name>.
+	if r := run(t, o, "", nil, "skills", "install", "hello-a", "--dir", dir); r.code != 0 {
+		t.Fatalf("%+v", r)
+	}
+	if read("reearth-hello-a") != skillA || read("reearth-hello-b") != "" || read("reearth") != "" {
+		t.Fatal("install hello-a wrote the wrong skills")
+	}
+
+	// Without a name: the CLI skill, and an update of the product skills
+	// installed there, but no new ones.
+	if err := os.WriteFile(filepath.Join(dir, "reearth-hello-a", "SKILL.md"), []byte("old"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if r := run(t, o, "", nil, "skills", "install", "--dir", dir); r.code != 0 {
+		t.Fatalf("%+v", r)
+	}
+	if read("reearth") == "" || read("reearth-hello-a") != skillA || read("reearth-hello-b") != "" {
+		t.Fatalf("install without a name: reearth=%q hello-a=%q hello-b=%q", read("reearth"), read("reearth-hello-a"), read("reearth-hello-b"))
+	}
+
+	// The CLI skill by its name: only that skill, with no update of the
+	// product skills; with a product skill, both.
+	cli := run(t, o, "", nil, "skills", "install", "--print")
+	if r := run(t, o, "", nil, "skills", "install", "reearth", "--print"); r.code != 0 || cli.code != 0 || r.out != cli.out {
+		t.Fatalf("--print reearth = %+v, want %+v", r, cli)
+	}
+	dir = t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "reearth-hello-a"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "reearth-hello-a", "SKILL.md"), []byte("old"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if r := run(t, o, "", nil, "skills", "install", "reearth", "--dir", dir); r.code != 0 {
+		t.Fatalf("%+v", r)
+	}
+	if read("reearth") != cli.out || read("reearth-hello-a") != "old" {
+		t.Fatalf("install reearth: reearth=%q hello-a=%q", read("reearth"), read("reearth-hello-a"))
+	}
+	if r := run(t, o, "", nil, "skills", "install", "reearth", "hello-b", "--dir", dir); r.code != 0 {
+		t.Fatalf("%+v", r)
+	}
+	if read("reearth") != cli.out || read("reearth-hello-b") != skillB {
+		t.Fatalf("install reearth hello-b: reearth=%q hello-b=%q", read("reearth"), read("reearth-hello-b"))
+	}
+
+	if r := run(t, o, "", nil, "skills", "install", "hello-b", "--print"); r.code != 0 || r.out != skillB {
+		t.Fatalf("--print hello-b = %+v", r)
+	}
+	if r := run(t, o, "", nil, "skills", "install", "hello-a", "hello-b", "--print"); r.code != cmdutil.ExitUsage {
+		t.Fatalf("--print with two names = %+v", r)
+	}
+	if r := run(t, o, "", nil, "skills", "install", "nope", "--dir", dir); r.code != cmdutil.ExitUsage || !strings.Contains(r.errOut, "available: reearth, hello-a, hello-b") {
+		t.Fatalf("unknown skill = %+v", r)
+	}
+
+	if r := run(t, o, "", nil, "skills", "list", "--jq", ".[].name"); r.code != 0 || r.out != "reearth\nhello-a\nhello-b\n" {
+		t.Fatalf("list = %+v", r)
+	}
+	if r := run(t, unified, "", nil, "skills", "list", "--jq", ".[] | [.name, .product] | join(\",\")"); r.code != 0 || r.out != "reearth,\n" {
+		t.Fatalf("list without product skills = %+v", r)
+	}
+}
+
 func TestHelpTopics(t *testing.T) {
 	setup(t)
 	r := run(t, unified, "", nil, "help", "exit-codes")
