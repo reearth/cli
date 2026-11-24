@@ -6,10 +6,13 @@ import (
 	"flag"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strings"
 	"testing"
 
 	"github.com/spf13/cobra"
 
+	"github.com/reearth/cli/products/visualizer"
 	"github.com/reearth/cli/sdk/app"
 	"github.com/reearth/cli/sdk/cmdtree"
 	"github.com/reearth/cli/sdk/envvar"
@@ -64,5 +67,40 @@ func TestCommandSurface(t *testing.T) {
 func TestCommandDescriptions(t *testing.T) {
 	for _, err := range cmdtree.Lint(cmdtree.Walk(newRoot(t))) {
 		t.Error(err)
+	}
+}
+
+// TestSkillSearches checks that the searches product skills tell agents to
+// run find the commands they mean.
+func TestSkillSearches(t *testing.T) {
+	dir := t.TempDir()
+	envvartest.Fake(t, envvar.Map{
+		"REEARTH_CONFIG_DIR": filepath.Join(dir, "config"),
+		"REEARTH_CACHE_DIR":  filepath.Join(dir, "cache"),
+		"REEARTH_DATA_DIR":   filepath.Join(dir, "data"),
+	})
+	want := map[string]string{
+		"validate a plugin":       "reearth visualizer plugin validate",
+		"zip a plugin for upload": "reearth visualizer plugin pack",
+	}
+	var found int
+	for _, s := range (visualizer.Product{}).Skills() {
+		for _, m := range regexp.MustCompile("`reearth search \"([^\"]+)\"`").FindAllStringSubmatch(s.Content, -1) {
+			found++
+			cmd, ok := want[m[1]]
+			if !ok {
+				t.Errorf("%s: no expected command for the search %q; add it to this test", s.Name, m[1])
+				continue
+			}
+			ios, _, out, _ := iostreams.Test()
+			o := options()
+			code := app.Execute(app.NewFactory(o, ios), o, []string{"search", m[1], "--jq", ".[0].command"})
+			if got := strings.TrimSpace(out.String()); code != 0 || got != cmd {
+				t.Errorf("%s: search %q finds %q first (exit %d), want %q", s.Name, m[1], got, code, cmd)
+			}
+		}
+	}
+	if found != len(want) {
+		t.Errorf("found %d searches in the skills, want %d", found, len(want))
 	}
 }

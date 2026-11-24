@@ -99,6 +99,7 @@ apt, ...), the command prints how to upgrade with it instead.`,
 			if !method.Self {
 				f.IO.Info("%s was installed with %s. Upgrade it with:", f.AppName, method.Name)
 				f.IO.Println("  " + f.IO.ErrColor().Bold(method.Command))
+				f.IO.Hint("then run `%s skills install` again, with the same --agent, --project or --dir you installed with, to update your agent skills", f.AppName)
 				return nil
 			}
 			if build.IsDev() && !force {
@@ -116,6 +117,7 @@ apt, ...), the command prints how to upgrade with it instead.`,
 				return err
 			}
 			f.IO.Success("Upgraded %s to %s", f.AppName, f.IO.ErrColor().Bold(normalize(rel.TagName)))
+			f.IO.Hint("run `%s skills install` again, with the same --agent, --project or --dir you installed with, to update your agent skills", f.AppName)
 			return nil
 		},
 	}

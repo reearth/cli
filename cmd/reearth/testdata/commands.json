@@ -1302,13 +1302,13 @@
   {
     "path": "reearth skills",
     "usage": "reearth skills [flags]",
-    "short": "Install the skill that teaches coding agents to use this CLI",
+    "short": "Install agent skills for this CLI and its products",
     "runnable": false
   },
   {
     "path": "reearth skills install",
-    "usage": "reearth skills install [flags]",
-    "short": "Install the agent skill (SKILL.md)",
+    "usage": "reearth skills install [name...] [flags]",
+    "short": "Install agent skills (SKILL.md)",
     "runnable": true,
     "flags": [
       {
@@ -1333,6 +1333,12 @@
         "usage": "Install into the current directory instead of your home directory"
       }
     ]
+  },
+  {
+    "path": "reearth skills list",
+    "usage": "reearth skills list [flags]",
+    "short": "List the agent skills you can install",
+    "runnable": true
   },
   {
     "path": "reearth doctor",

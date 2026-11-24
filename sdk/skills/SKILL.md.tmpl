@@ -22,6 +22,10 @@ For how Visualizer, CMS and Flow work, their concepts, and the plugin and API gu
 1. `{{.App}} docs search "<topic>"`, such as `{{.App}} docs search "参照フィールド"`
 2. `{{.App}} docs read <id>` with an id from the results
 
+## Skills for building on the products
+
+Some products ship their own skills. `{{.App}} skills list` shows them; suggest `{{.App}} skills install <name>` to the user when a task needs one.
+
 ## Rules
 
 - Pass `--json` when you parse output, and `--jq '<expr>'` to filter it. Never parse tables.
