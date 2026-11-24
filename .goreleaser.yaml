@@ -89,7 +89,7 @@ homebrew_casks:
     repository:
       owner: reearth
       name: homebrew-tap
-      token: "{{ index .Env \"HOMEBREW_TAP_TOKEN\" }}"
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
     directory: Casks
     # Commits are attributed to the reearth-app bot that owns the token.
     commit_author:
@@ -117,7 +117,7 @@ scoops:
     repository:
       owner: reearth
       name: scoop-bucket
-      token: "{{ index .Env \"SCOOP_BUCKET_TOKEN\" }}"
+      token: "{{ .Env.SCOOP_BUCKET_TOKEN }}"
     directory: bucket
     commit_author:
       name: '{{ index .Env "GH_APP_USER" }}'
@@ -138,7 +138,7 @@ winget:
       owner: reearth
       name: winget-pkgs
       branch: "reearth-{{ .Version }}"
-      token: "{{ index .Env \"WINGET_TOKEN\" }}"
+      token: "{{ .Env.WINGET_TOKEN }}"
       pull_request:
         enabled: true
         base:
