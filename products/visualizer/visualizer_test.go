@@ -14,6 +14,7 @@ import (
 
 	"github.com/reearth/cli/products/visualizer"
 	"github.com/reearth/cli/sdk/app"
+	"github.com/reearth/cli/sdk/auth"
 	"github.com/reearth/cli/sdk/cmdutil"
 	"github.com/reearth/cli/sdk/core"
 	"github.com/reearth/cli/sdk/envvar"
@@ -345,6 +346,24 @@ func TestAddTS(t *testing.T) {
 	} {
 		if r := run(t, append([]string{"vis", "plugin", "add"}, args...)...); r.code != cmdutil.ExitUsage {
 			t.Errorf("%s: code = %d (%s)", name, r.code, r.errOut)
+		}
+	}
+}
+
+// The APIs are built in for prod and staging only, so other environments
+// never fall back to prod by accident.
+func TestBaseURL(t *testing.T) {
+	for _, tc := range []struct {
+		env  *auth.Env
+		want string
+	}{
+		{&auth.Env{Name: auth.EnvProd}, "https://api.visualizer.reearth.io/api/v1"},
+		{&auth.Env{Name: auth.EnvStaging}, "https://api.visualizer.dev.reearth.io/api/v1"},
+		{&auth.Env{Name: "onprem"}, ""},
+		{nil, ""},
+	} {
+		if got := (visualizer.Product{}).BaseURL(tc.env); got != tc.want {
+			t.Errorf("BaseURL(%+v) = %q, want %q", tc.env, got, tc.want)
 		}
 	}
 }
