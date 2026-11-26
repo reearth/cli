@@ -21,7 +21,23 @@ var _ core.APIProduct = Product{}
 func (Product) Name() string  { return "visualizer" }
 func (Product) Short() string { return "Manage Re:Earth Visualizer projects and develop plugins" }
 
-func (Product) BaseURL(*auth.Env) string { return "" }
+// baseURLs are the Visualizer REST APIs of the built-in environments. The
+// release build's staging environment signs in to the dev Auth0 tenant, so it
+// uses the dev API.
+var baseURLs = map[string]string{
+	auth.EnvProd:    "https://api.visualizer.reearth.io/api/v1",
+	auth.EnvStaging: "https://api.visualizer.dev.reearth.io/api/v1",
+}
+
+// BaseURL is the API of a built-in environment. Other environments set
+// REEARTH_VISUALIZER_BASE_URL or envs.<name>.products.visualizer.base_url,
+// which also take precedence over this.
+func (Product) BaseURL(env *auth.Env) string {
+	if env == nil {
+		return ""
+	}
+	return baseURLs[env.Name]
+}
 
 func (p Product) Command(f *core.Factory) *cobra.Command {
 	cmd := &cobra.Command{
@@ -36,8 +52,10 @@ a widget (UI on the map), a storyBlock or an infoboxBlock, with its code in
 commands create, serve, validate and package plugins.
 
 "project", "story" and "plugin push/list/uninstall" call the Visualizer API
-as the current account. Until the API's address is built in, set
-REEARTH_VISUALIZER_BASE_URL to it.
+as the current account: https://api.visualizer.reearth.io/api/v1 on the prod
+environment and https://api.visualizer.dev.reearth.io/api/v1 on staging. For
+other environments, set REEARTH_VISUALIZER_BASE_URL or
+envs.<name>.products.visualizer.base_url in the config.
 
 The workspace comes from --workspace, REEARTH_VISUALIZER_WORKSPACE,
 .reearth.yaml, then the account's default. The project comes from the
